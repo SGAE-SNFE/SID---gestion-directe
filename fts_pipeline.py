@@ -10,27 +10,22 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 
+from fts_enrichissement import enrichir_procedure1, exporter_xlsx_colore
 
-# pour l'instant on fait juste les etapes 1 et 2 de la procedure CMFE :
-# telecharger les fichiers FTS annuels et les coller les uns sous les autres
-# le reste (pays, CFP, fichier france...) on le fera apres
 
-# ---- URLs et headers --------------------------------------------------------
-
-# url trouvee via F12 dans le navigateur (l'ancienne avec /document/ ne marche plus)
+# Le serveur CE a changé d'URL à un moment — celle-ci fonctionne en mai 2026.
+# On garde l'ancienne en secours au cas où ils basculent encore.
 FTS_BASE_URL = (
     "https://ec.europa.eu/budget/financial-transparency-system/download/"
     "{annee}_FTS_dataset_en.xlsx"
 )
-
-# url de secours au cas ou la premiere ne repond pas
 FTS_ALT_URL = (
     "https://commission.europa.eu/document/"
     "{annee}_FTS_dataset_en.xlsx"
 )
 
-# sans ces headers le serveur renvoie une page html au lieu du fichier
-# j'ai du ajouter le Referer et le User-Agent pour que ca marche
+# Sans ces headers, le serveur renvoie une page HTML au lieu du fichier.
+# User-Agent + Referer suffisent à passer la protection anti-scraping.
 FTS_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -44,14 +39,13 @@ FTS_HEADERS = {
     ),
 }
 
-# annees disponibles sur le site FTS
 ANNEE_MIN_DEFAULT = 2014
 ANNEE_MAX_DEFAULT = 2024
 
-# dossiers utilises par le script
-DIR_RAW       = Path("data/raw")        # les xlsx bruts telecharges
-DIR_PROCESSED = Path("data/processed")  # le csv consolide
-DIR_LOGS      = Path("logs")
+DIR_RAW          = Path("data/raw")
+DIR_PROCESSED    = Path("data/processed")
+DIR_LOGS         = Path("logs")
+DIR_REFERENTIELS = Path("referentiels")
 
 
 # ---- logs -------------------------------------------------------------------
@@ -59,7 +53,6 @@ DIR_LOGS      = Path("logs")
 def setup_logging(log_file: Path) -> logging.Logger:
     DIR_LOGS.mkdir(parents=True, exist_ok=True)
 
-    # affichage couleur dans le terminal
     handler_console = colorlog.StreamHandler()
     handler_console.setFormatter(colorlog.ColoredFormatter(
         "%(log_color)s%(asctime)s [%(levelname)-8s]%(reset)s %(message)s",
@@ -73,7 +66,6 @@ def setup_logging(log_file: Path) -> logging.Logger:
         }
     ))
 
-    # copie dans un fichier pour garder une trace
     handler_file = logging.FileHandler(log_file, encoding="utf-8")
     handler_file.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] %(message)s",
@@ -87,11 +79,11 @@ def setup_logging(log_file: Path) -> logging.Logger:
     return logger
 
 
-# ---- etape 1 : telechargement -----------------------------------------------
+# ---- étape 1 : téléchargement -----------------------------------------------
 
 def _est_xlsx_valide(chemin: Path) -> bool:
-    # un vrai fichier xlsx commence toujours par "PK" (c'est un zip renomme)
-    # si on trouve autre chose c'est que le serveur a renvoye du html
+    # Un vrai xlsx est un zip, donc commence toujours par "PK".
+    # Si on reçoit autre chose, c'est que le serveur a renvoyé une page d'erreur HTML.
     try:
         with open(chemin, "rb") as f:
             return f.read(2) == b"PK"
@@ -103,14 +95,13 @@ def telecharger_fichier_fts(annee: int, repertoire: Path, logger: logging.Logger
     repertoire.mkdir(parents=True, exist_ok=True)
     chemin_local = repertoire / f"{annee}_FTS_dataset_en.xlsx"
 
-    # si le fichier est deja la et valide, pas besoin de le retelecharger
     if chemin_local.exists() and not forcer:
         if _est_xlsx_valide(chemin_local):
             taille_mo = chemin_local.stat().st_size / 1024 ** 2
-            logger.info(f"  [{annee}] deja present ({taille_mo:.1f} Mo) — on passe")
+            logger.info(f"  [{annee}] déjà présent ({taille_mo:.1f} Mo) — on passe")
             return chemin_local
         else:
-            # le fichier existe mais c'est du html, probablement un telechargement rate
+            # Fichier corrompu ou téléchargement interrompu — on repart de zéro
             logger.warning(f"  [{annee}] fichier invalide sur le disque — suppression et retry")
             try:
                 chemin_local.unlink()
@@ -118,7 +109,6 @@ def telecharger_fichier_fts(annee: int, repertoire: Path, logger: logging.Logger
                 logger.error(f"  [{annee}] impossible de supprimer {chemin_local.name} — ferme le fichier et relance")
                 return None
 
-    # on essaie les deux urls l'une apres l'autre
     for url in [FTS_BASE_URL.format(annee=annee), FTS_ALT_URL.format(annee=annee)]:
         logger.info(f"  [{annee}] essai : {url}")
         try:
@@ -129,14 +119,12 @@ def telecharger_fichier_fts(annee: int, repertoire: Path, logger: logging.Logger
                 time.sleep(2)
                 continue
 
-            # si c'est du html le serveur nous a renvoye une page web au lieu du fichier
             content_type = response.headers.get("content-type", "")
             if "html" in content_type.lower():
-                logger.warning(f"  [{annee}] reponse HTML recue ({content_type}) — url probablement obsolete")
+                logger.warning(f"  [{annee}] réponse HTML reçue ({content_type}) — URL probablement obsolète")
                 time.sleep(2)
                 continue
 
-            # telechargement avec barre de progression
             taille_attendue = int(response.headers.get("content-length", 0))
             with open(chemin_local, "wb") as f:
                 with tqdm(total=taille_attendue, unit="B", unit_scale=True, desc=f"    {annee}", leave=False) as barre:
@@ -144,9 +132,8 @@ def telecharger_fichier_fts(annee: int, repertoire: Path, logger: logging.Logger
                         f.write(chunk)
                         barre.update(len(chunk))
 
-            # verification que ce qu'on a recu est bien un xlsx et pas du html
             if not _est_xlsx_valide(chemin_local):
-                logger.warning(f"  [{annee}] fichier recu invalide — supprime")
+                logger.warning(f"  [{annee}] fichier reçu invalide — supprimé")
                 chemin_local.unlink()
                 time.sleep(2)
                 continue
@@ -158,18 +145,18 @@ def telecharger_fichier_fts(annee: int, repertoire: Path, logger: logging.Logger
         except requests.Timeout:
             logger.warning(f"  [{annee}] timeout sur {url}")
         except requests.RequestException as e:
-            logger.warning(f"  [{annee}] erreur reseau : {e}")
+            logger.warning(f"  [{annee}] erreur réseau : {e}")
 
         time.sleep(2)
 
-    logger.error(f"  [{annee}] echec — aucune url n'a fonctionne")
-    logger.error(f"  [{annee}] verifier manuellement : https://ec.europa.eu/budget/financial-transparency-system/")
+    logger.error(f"  [{annee}] échec — aucune URL n'a fonctionné")
+    logger.error(f"  [{annee}] vérifier manuellement : https://ec.europa.eu/budget/financial-transparency-system/")
     return None
 
 
 def telecharger_tous_les_fichiers(annees: list, repertoire: Path, logger: logging.Logger, forcer: bool = False) -> dict:
     logger.info("=" * 60)
-    logger.info(f"ETAPE 1 — Telechargement ({len(annees)} fichiers : {annees[0]}-{annees[-1]})")
+    logger.info(f"ÉTAPE 1 — Téléchargement ({len(annees)} fichiers : {annees[0]}-{annees[-1]})")
     logger.info("=" * 60)
 
     resultats = {}
@@ -182,12 +169,10 @@ def telecharger_tous_les_fichiers(annees: list, repertoire: Path, logger: loggin
     return resultats
 
 
-# ---- etape 2 : consolidation ------------------------------------------------
-# c'est l'equivalent du copier-coller manuel dans l'onglet DATASET
-# on empile juste les lignes de chaque annee les unes sous les autres, rien de plus
+# ---- étape 2 : consolidation ------------------------------------------------
 
 def charger_fichier_fts(chemin: Path, annee: int, logger: logging.Logger) -> pd.DataFrame | None:
-    # on lit tout en texte (dtype=str) pour ne pas que pandas transforme les valeurs
+    # On lit tout en string pour éviter que pandas interprète les montants ou les codes postaux
     logger.info(f"  [{annee}] chargement de {chemin.name}")
     try:
         df = pd.read_excel(chemin, sheet_name=0, dtype=str, engine="openpyxl")
@@ -200,7 +185,7 @@ def charger_fichier_fts(chemin: Path, annee: int, logger: logging.Logger) -> pd.
 
 def consolider(fichiers: dict, logger: logging.Logger) -> pd.DataFrame:
     logger.info("=" * 60)
-    logger.info("ETAPE 2 — Consolidation")
+    logger.info("ÉTAPE 2 — Consolidation")
     logger.info("=" * 60)
 
     frames = []
@@ -210,11 +195,11 @@ def consolider(fichiers: dict, logger: logging.Logger) -> pd.DataFrame:
             frames.append(df)
 
     if not frames:
-        logger.critical("aucun fichier charge — arret")
+        logger.critical("aucun fichier chargé — arrêt")
         sys.exit(1)
 
     df_total = pd.concat(frames, ignore_index=True)
-    logger.info(f"  consolide : {len(df_total):,} lignes au total | annees {sorted(fichiers.keys())}")
+    logger.info(f"  consolidé : {len(df_total):,} lignes | années {sorted(fichiers.keys())}")
     return df_total
 
 
@@ -222,20 +207,20 @@ def consolider(fichiers: dict, logger: logging.Logger) -> pd.DataFrame:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="telechargement + consolidation des fichiers FTS",
+        description="Téléchargement + consolidation + enrichissement des fichiers FTS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 exemples :
-  python fts_pipeline.py                          -> toutes les annees
-  python fts_pipeline.py --annees 2022 2023 2024  -> annees precises
-  python fts_pipeline.py --annee-min 2021         -> a partir de 2021
-  python fts_pipeline.py --forcer-telechargement  -> retelecharger meme si deja present
+  python fts_pipeline.py                          -> toutes les années
+  python fts_pipeline.py --annees 2022 2023 2024  -> années précises
+  python fts_pipeline.py --annee-min 2021         -> à partir de 2021
+  python fts_pipeline.py --forcer-telechargement  -> re-télécharger même si déjà présent
         """
     )
-    parser.add_argument("--annees", nargs="+", type=int, help="liste d'annees")
+    parser.add_argument("--annees", nargs="+", type=int, help="liste d'années")
     parser.add_argument("--annee-min", type=int, default=ANNEE_MIN_DEFAULT)
     parser.add_argument("--annee-max", type=int, default=ANNEE_MAX_DEFAULT)
-    parser.add_argument("--forcer-telechargement", action="store_true", help="retelecharger meme si deja present")
+    parser.add_argument("--forcer-telechargement", action="store_true", help="re-télécharger même si déjà présent")
     return parser.parse_args()
 
 
@@ -253,10 +238,9 @@ def main():
     logger.info("=" * 60)
 
     annees = sorted(args.annees) if args.annees else list(range(args.annee_min, args.annee_max + 1))
-    logger.info(f"  annees : {annees}")
+    logger.info(f"  années : {annees}")
 
-    # nettoyage des anciens fichiers avant de commencer (processed + vieux logs)
-    # on garde uniquement le log qu'on vient d'ouvrir
+    # On fait le ménage au démarrage : processed + vieux logs, sauf le log qu'on vient d'ouvrir
     log_courant = Path(logger.handlers[1].stream.name).resolve()
     for dossier in [DIR_PROCESSED, DIR_LOGS]:
         if not dossier.exists():
@@ -268,49 +252,67 @@ def main():
                 f.unlink()
             except PermissionError:
                 logger.warning(f"  impossible de supprimer {f.name} (fichier ouvert)")
-    logger.info("  anciens fichiers supprimes")
+    logger.info("  anciens fichiers supprimés")
 
-    # etape 1
+    # Étape 1 — téléchargement
     fichiers = telecharger_tous_les_fichiers(annees, DIR_RAW, logger, forcer=args.forcer_telechargement)
     if not fichiers:
-        logger.critical("aucun fichier disponible — verifier la connexion")
+        logger.critical("aucun fichier disponible — vérifier la connexion")
         sys.exit(1)
 
-    # etape 2 — on consolide seulement si le nombre de fichiers a change
-    # sinon on garde le csv deja produit
+    # Étape 2 — on re-consolide uniquement si le nombre d'années a changé
     DIR_PROCESSED.mkdir(parents=True, exist_ok=True)
     ETAT_FILE = DIR_PROCESSED / ".nb_fichiers_consolides"
 
     nb_fichiers  = len(fichiers)
     nb_precedent = int(ETAT_FILE.read_text()) if ETAT_FILE.exists() else -1
-    csv_existant = next(DIR_PROCESSED.glob("*_FTS_DATASET_COMPLET.csv"), None)
+    fichier_existant = (
+        next(DIR_PROCESSED.glob("*_FTS_DATASET_COMPLET.xlsx"), None)
+        or next(DIR_PROCESSED.glob("*_FTS_DATASET_COMPLET.csv"), None)
+    )
 
-    if nb_fichiers == nb_precedent and csv_existant:
-        logger.info(f"  pas de changement ({nb_fichiers} fichiers) — consolidation ignoree")
-        logger.info(f"  fichier existant : {csv_existant.name}")
-    else:
+    besoin_consolidation = not (nb_fichiers == nb_precedent and fichier_existant)
+
+    if besoin_consolidation:
         df = consolider(fichiers, logger)
-
-        ts = datetime.now().strftime("%Y%m%d_%H%M")
-        chemin_csv = DIR_PROCESSED / f"{ts}_FTS_DATASET_COMPLET.csv"
-
-        df.to_csv(chemin_csv, index=False, encoding="utf-8-sig", sep=";")
-        logger.info(f"  csv exporte : {chemin_csv.name}")
-        logger.info(f"  {len(df):,} lignes | colonnes : {list(df.columns)}")
-
-        # on retient combien de fichiers ont ete consolides
         ETAT_FILE.write_text(str(nb_fichiers))
-
-        # suppression des xlsx bruts pour liberer de la place
         logger.info("  suppression des fichiers bruts...")
         for f in DIR_RAW.glob("*.xlsx"):
             try:
                 f.unlink()
             except PermissionError:
                 logger.warning(f"  impossible de supprimer {f.name} (fichier ouvert)")
+    else:
+        logger.info(f"  pas de changement ({nb_fichiers} fichiers) — consolidation ignorée")
+        logger.info(f"  chargement : {fichier_existant.name}")
+        if fichier_existant.suffix == ".xlsx":
+            df = pd.read_excel(fichier_existant, sheet_name="DATASET", dtype=str, engine="openpyxl")
+        else:
+            df = pd.read_csv(fichier_existant, dtype=str, sep=";", encoding="utf-8-sig", low_memory=False)
+        logger.info(f"  {len(df):,} lignes chargées")
+
+    # Procédure 1 — enrichissement (pays, CFP, NUTS)
+    # On vérifie si c'est déjà fait pour ne pas re-tourner inutilement
+    colonnes_enrichissement = {"Etat_Statut", "Periode_CFP", "CFP_Depense", "NUTS2_FR"}
+    if colonnes_enrichissement.issubset(set(df.columns)):
+        logger.info("  enrichissement déjà présent — ignoré")
+    else:
+        df = enrichir_procedure1(df, DIR_REFERENTIELS, logger)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    chemin_xlsx = DIR_PROCESSED / f"{ts}_FTS_DATASET_COMPLET.xlsx"
+
+    if fichier_existant and fichier_existant.exists():
+        try:
+            fichier_existant.unlink()
+        except PermissionError:
+            logger.warning(f"  impossible de supprimer {fichier_existant.name} (fichier ouvert)")
+
+    exporter_xlsx_colore(df, chemin_xlsx, logger)
+    logger.info(f"  {len(df):,} lignes | colonnes : {list(df.columns)}")
 
     logger.info("=" * 60)
-    logger.info(f"  termine — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    logger.info(f"  terminé — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     logger.info("=" * 60)
 
 

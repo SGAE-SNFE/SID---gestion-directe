@@ -1,51 +1,43 @@
 # Pipeline FTS — Financial Transparency System
 
-Script Python qui automatise la récupération et la consolidation des données du [Financial Transparency System (FTS)](https://ec.europa.eu/budget/financial-transparency-system/) de la Commission européenne.
+Automatise la procédure CMFE de construction du fichier FTS enrichi.
+Source : [ec.europa.eu/budget/financial-transparency-system](https://ec.europa.eu/budget/financial-transparency-system/)
 
-## Ce que fait le script
+## Ce que ça fait
 
-**Étape 1 — Téléchargement**
-Récupère les fichiers XLSX annuels (2014–2024) directement depuis `ec.europa.eu`. Si un fichier est déjà présent et valide sur le disque, il n'est pas retéléchargé.
+| Étape | Description |
+|---|---|
+| 1 | Télécharge les fichiers XLSX annuels (2014–2024) depuis le portail CE |
+| 2 | Empile les années en un seul dataset |
+| Proc. 1 | Enrichit chaque ligne : statut pays, période CFP, localisation NUTS FR |
+| Export | Produit un `.xlsx` avec les colonnes enrichies surlignées en jaune |
 
-**Étape 2 — Consolidation**
-Empile les 11 fichiers annuels les uns sous les autres pour produire un seul fichier `FTS_DATASET_COMPLET.csv`. La consolidation est ignorée si le nombre de fichiers sources n'a pas changé depuis le dernier lancement.
-
-Après consolidation, les fichiers XLSX bruts sont supprimés pour libérer de l'espace.
+Les colonnes ajoutées (`Etat_Statut`, `Periode_CFP`, `CFP_Depense`, `NUTS2_FR`, `Region_FR`, `NUTS3_FR`) apparaissent en **fond jaune** dans le fichier de sortie et sont placées juste après le bénéficiaire.
 
 ## Installation
 
 ```bash
-pip install requests pandas openpyxl tqdm colorlog
+pip install requests pandas openpyxl xlsxwriter tqdm colorlog
 ```
 
 ## Utilisation
 
 ```bash
-# toutes les années (2014–2024)
-python fts_pipeline.py
-
-# années précises
-python fts_pipeline.py --annees 2022 2023 2024
-
-# à partir d'une année
-python fts_pipeline.py --annee-min 2021
-
-# forcer le re-téléchargement même si les fichiers sont déjà présents
-python fts_pipeline.py --forcer-telechargement
+python fts_pipeline.py                          # toutes les années
+python fts_pipeline.py --annees 2022 2023 2024  # années précises
+python fts_pipeline.py --annee-min 2021         # à partir de 2021
+python fts_pipeline.py --forcer-telechargement  # re-télécharger même si déjà présent
 ```
 
-## Structure du projet
+## Structure
 
 ```
 FTS/
 ├── fts_pipeline.py          # script principal
+├── fts_enrichissement.py    # procédure 1 : enrichissement + export coloré
+├── referentiels/            # fichier XLSX de référence (pays, CFP, NUTS)
 ├── data/
-│   ├── raw/                 # fichiers XLSX téléchargés (supprimés après consolidation)
-│   └── processed/           # dataset consolidé (CSV)
-└── logs/                    # logs d'exécution
+│   ├── raw/                 # XLSX annuels (supprimés après consolidation)
+│   └── processed/           # dataset enrichi (.xlsx)
+└── logs/
 ```
-
-## Source des données
-
-Les données proviennent du portail officiel de la Commission européenne :
-[https://ec.europa.eu/budget/financial-transparency-system/](https://ec.europa.eu/budget/financial-transparency-system/)

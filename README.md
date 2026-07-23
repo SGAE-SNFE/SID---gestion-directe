@@ -120,11 +120,6 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 La durée est dominée par les appels à l'API publique, cadencés par
 `DELAI_API = 0.15 s`. Sur un fichier volumineux, comptez **plusieurs heures**.
 
-> **Ce n'est pas un problème de puissance machine.** Le facteur limitant est le
-> débit autorisé par l'API (~7 requêtes/seconde) : ni une machine plus rapide,
-> ni un cluster distribué n'y changeraient quoi que ce soit. Paralléliser
-> déclencherait des rejets HTTP 429 et *ralentirait* le traitement.
-
 ### 3.4 Sessions longues et reprise
 
 Colab interrompt les sessions inactives. Les caches (`CACHE_FICHES_SIREN`,

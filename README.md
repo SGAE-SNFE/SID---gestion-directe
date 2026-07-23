@@ -114,10 +114,6 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 | 5 | 13 | chargement des référentiels **puis dépôt du fichier FTS** | ~10 s |
 | 6 | 15 | **orchestration : le traitement complet** | heures |
 
-> **Point de contrôle.** Après la cellule 13, vérifiez les compteurs affichés :
-> `108 départements`, `31 950 communes`, `732 sous-classes NAF`,
-> `69 SIREN d'opérateurs`, `262 codes SGAE`. Un compteur à zéro signale un bloc
-> JSON corrompu — corrigez avant de lancer le traitement.
 
 ### 3.3 Durée et facteur limitant
 

@@ -531,8 +531,7 @@ le score est déjà < 95).
 **⑤ Département** — bonus **+3** si les deux premiers chiffres du CP
 concordent ; malus 3 % sinon (uniquement si score < 93).
 
-**⑥ État administratif** — pénalité **désactivée** (`PENALISER_RADIEES = False`,
-voir §7).
+**⑥ État administratif** — pénalité **désactivée** (`PENALISER_RADIEES = False`).
 
 > **La règle du « nom parfait ».** Si le nom correspond **exactement** à celui de
 > l'API (exactitude 100, mots juridiques neutralisés), **toutes les pénalités

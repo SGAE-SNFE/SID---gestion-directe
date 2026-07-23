@@ -1258,13 +1258,3 @@ infos_par_siren = lambda siren, session, essais=4: {
 | [INSEE — catégories juridiques](https://www.insee.fr/fr/information/2028129) | nomenclature `cj_septembre_2022` |
 | [INSEE — NAF rév. 2](https://www.insee.fr/fr/information/2120875) | libellés d'activité |
 
-
-
-### Perspective d'industrialisation
-
-Une architecture cible a été esquissée (`schema_fts_postgres.sql`, 17 tables et
-3 vues) : référentiels et cache SIREN en base PostgreSQL, enrichissement
-déterministe en SQL, moteur figé conservé en Python, export colorié en Python.
-
----
-

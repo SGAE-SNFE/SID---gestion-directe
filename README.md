@@ -1,10 +1,3 @@
-# Pipeline d'enrichissement du fichier FTS — France
-
-**Version courante : `v5_19`** · Notebook : `FTS_France_PREPARATION_ENRICHISSEMENT_v5_19.ipynb`
-Secrétariat général des affaires européennes — Pôle « Mobilisation des fonds européens »
-
----
-
 ## Table des matières
 
 1. [À quoi sert ce pipeline](#1-à-quoi-sert-ce-pipeline)

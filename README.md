@@ -105,14 +105,14 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 
 ### 3.2 Ordre d'exécution
 
-| Ordre | Cellule | Rôle | Durée |
+| Ordre | Cellule | Rôle |
 |---|---|---|---|
-| 1 | 1 | installation des paquets | ~1 min |
-| 2 | 2 | référentiels embarqués (aucune exécution lourde) | instantané |
-| 3 | 3 | imports et paramètres | instantané |
-| 4 | 4 à 11 | définition des fonctions | instantané |
-| 5 | 13 | chargement des référentiels **puis dépôt du fichier FTS** | ~10 s |
-| 6 | 15 | **orchestration : le traitement complet** | heures |
+| 1 | 1 | installation des paquets |
+| 2 | 2 | référentiels embarqués (aucune exécution lourde) |
+| 3 | 3 | imports et paramètres |
+| 4 | 4 à 11 | définition des fonctions |
+| 5 | 13 | chargement des référentiels **puis dépôt du fichier FTS** |
+| 6 | 15 | **orchestration : le traitement complet** |
 
 
 ### 3.3 Durée et facteur limitant

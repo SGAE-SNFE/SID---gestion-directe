@@ -431,8 +431,7 @@ rapport : c'est la trace de la façon dont le bénéficiaire a été retrouvé.
 >
 > Les prépositions bloquantes sont `DE, DU, DES, D', LA, LE, LES, L', POUR, A,
 > AU, AUX, EN, ET, SUR, AVEC`. La logique : si le mot d'en-tête est suivi d'une
-> préposition, il fait **partie intégrante** du nom officiel. Règle établie par
-> examen des 66 000 lignes du fichier FTS.
+> préposition, il fait **partie intégrante** du nom officiel.
 
 #### Stratégies « AUTRE » (préfixe `E`)
 

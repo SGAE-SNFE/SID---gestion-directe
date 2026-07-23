@@ -320,10 +320,6 @@ adresse, alors A, B et C ne comptent que pour **un** bénéficiaire. C'est ce qu
 permet de rapprocher des libellés rédigés en plusieurs langues sur un même
 projet européen.
 
-> **Convention assumée** : les lignes anonymisées sans adresse exploitable
-> comptent chacune pour un bénéficiaire distinct, conformément à la règle FTS
-> « une ligne = un bénéficiaire par engagement ».
-
 ### 5.8 Les alertes de fin d'étape
 
 L'étape globale se termine par un bilan à lire attentivement :

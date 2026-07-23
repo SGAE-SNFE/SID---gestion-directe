@@ -106,7 +106,7 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 ### 3.2 Ordre d'exécution
 
 | Ordre | Cellule | Rôle |
-|---|---|---|---|
+|---|---|---|
 | 1 | 1 | installation des paquets |
 | 2 | 2 | référentiels embarqués (aucune exécution lourde) |
 | 3 | 3 | imports et paramètres |

@@ -120,14 +120,8 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 La durée est dominée par les appels à l'API publique, cadencés par
 `DELAI_API = 0.15 s`. Sur un fichier volumineux, comptez **plusieurs heures**.
 
-### 3.4 Sessions longues et reprise
 
-Colab interrompt les sessions inactives. Les caches (`CACHE_FICHES_SIREN`,
-`_CACHE_SUCCESSEUR_ACTIF`) vivent **en mémoire** et sont perdus au redémarrage.
-Pour un très gros fichier : découper en lots et traiter séquentiellement, ou
-migrer vers l'architecture PostgreSQL décrite au §14 (cache persistant).
-
-### 3.5 Exécution locale (Jupyter)
+### 3.4 Exécution locale (Jupyter)
 
 Le notebook fonctionne aussi en local. `IN_COLAB` passe à `False` : le dépôt de
 fichier par widget est remplacé par une lecture de chemin, et les fichiers de
@@ -161,12 +155,6 @@ jupyter notebook
 └─ CELLULE 15 ─── ORCHESTRATION (à lancer en dernier)
 ```
 
-### 4.2 Pourquoi les référentiels sont embarqués
-
-Un référentiel téléchargé à l'exécution est un point de panne : si l'URL change
-ou si le site est indisponible, le traitement s'arrête. Ici, tout est figé dans
-le `.ipynb` : le notebook est **autonome** et **reproductible à l'identique**,
-même dans plusieurs mois. Le coût est la taille du fichier (~1,8 Mo).
 
 | Référentiel | Volume | Contenu | Source |
 |---|---|---|---|

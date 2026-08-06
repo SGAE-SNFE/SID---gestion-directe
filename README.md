@@ -905,11 +905,11 @@ Dès qu'un maillon aboutit, on s'arrête. Si aucun n'aboutit, la case reste
 
 Distinction **juridique** européenne, pas géographique :
 
-| Statut | Base juridique | Territoires | Éligibilité |
-|---|---|---|---|
-| **Metro** | — | France métropolitaine | droit commun |
-| **RUP** | art. 349 TFUE | Guadeloupe, Martinique, Guyane, La Réunion, Mayotte, Saint-Martin | **dans** l'UE, éligibles aux fonds structurels |
-| **PTOM** | annexe II TFUE | Nouvelle-Calédonie, Polynésie française, Saint-Barthélemy, Wallis-et-Futuna, Saint-Pierre-et-Miquelon, TAAF | **hors** UE, régime d'association |
+| Statut |Territoires | Éligibilité |
+|---|---|---|
+| **Metro** | France métropolitaine | droit commun |
+| **RUP** | Guadeloupe, Martinique, Guyane, La Réunion, Mayotte, Saint-Martin | **dans** l'UE, éligibles aux fonds structurels |
+| **PTOM** | Nouvelle-Calédonie, Polynésie française, Saint-Barthélemy, Wallis-et-Futuna, Saint-Pierre-et-Miquelon, TAAF | **hors** UE, régime d'association |
 
 > **Piège classique** : Saint-Barthélemy (`97133`) est **PTOM**, Saint-Martin
 > (`97150`) est **RUP**. Deux îles voisines, deux régimes opposés, distingués

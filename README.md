@@ -1,3 +1,9 @@
+# README — Pipeline FTS France (v5_41)
+
+> Document mis à jour pour la version **v5_41** du notebook
+> `FTS_France_PREPARATION_ENRICHISSEMENT`. Les nouveautés depuis la version
+> précédemment documentée (v5_19) sont récapitulées en [section 17](#17-nouveautés-depuis-la-v5_19).
+
 ## Table des matières
 
 1. [À quoi sert ce pipeline](#1-à-quoi-sert-ce-pipeline)
@@ -16,6 +22,7 @@
 14. [Dépannage](#14-dépannage)
 15. [Glossaire](#15-glossaire)
 16. [Sources et références](#16-sources-et-références)
+17. [Nouveautés depuis la v5_19](#17-nouveautés-depuis-la-v5_19)
 
 ---
 
@@ -30,14 +37,21 @@ précieuse pour piloter la performance française d'accès aux financements
 européens — mais il est difficilement exploitable en l'état :
 
 - le **numéro de TVA** est absent sur une grande partie des lignes ;
-- il n'y a **ni SIREN ni SIRET**, donc aucun moyen direct de relier un
-  bénéficiaire aux référentiels français (INSEE, opérateurs de l'État) ;
+- il n'y a **ni SIREN ni SIRET** avant le millésime 2025, donc aucun moyen direct
+  de relier un bénéficiaire aux référentiels français (INSEE, opérateurs de
+  l'État) ;
 - l'**adresse est fréquemment masquée** par des caractères de remplacement
-  (`.`, `-`, `*****`), ce qui empêche toute ventilation territoriale ;
+  (`.`, `-`, `*****`), ou rédigée à l'anglo-saxonne (voie puis numéro), ce qui
+  empêche toute ventilation territoriale ;
 - la **nomenclature géographique** (NUTS2) est lacunaire et exprimée en
   anciennes régions ;
 - les **libellés de bénéficiaires** comportent doublons, variantes
-  orthographiques, sigles et traductions.
+  orthographiques, sigles et traductions ;
+- les colonnes d'**identification de projet** (`Call for proposals Reference`,
+  `Project / Contract Reference`, `Project / Contract Acronym`) ne sont
+  renseignées **qu'à partir du millésime 2025** : avant, elles valent
+  `N/A - Not applicable` alors que l'information figure dans le libellé de
+  l'objet.
 
 Avant automatisation, ce travail d'identification était réalisé à la main et
 mobilisait **plusieurs semaines** par livraison, avec un risque d'erreur et
@@ -50,10 +64,13 @@ qualifiée et territorialisée**, prête à être chargée dans MicroStrategy :
 
 | Apport | Détail |
 |---|---|
-| **Identification** | numéro de TVA, SIREN, SIRET retrouvés par appariement automatique avec la base SIRENE |
-| **Qualification juridique** | forme juridique (3 niveaux INSEE), statut simplifié SGAE, code et libellé NAF, état d'activité |
-| **Qualification institutionnelle** | opérateur de l'État (booléen) et programme budgétaire chef de file |
-| **Territorialisation** | code postal corrigé, NUTS2, Région, NUTS3, statut Metro / RUP / PTOM |
+| **Identification** | numéro de TVA, SIREN, SIRET retrouvés par appariement automatique avec la base SIRENE, ou repris du champ *Main Registration* de la Commission quand il est présent |
+| **Nom officiel** | `Nom API` : écriture exacte du bénéficiaire dans l'annuaire des entreprises, à comparer au libellé FTS |
+| **Qualification juridique** | forme juridique (3 niveaux INSEE), statut simplifié SGAE, code et libellé NAF, section NAF 2025, état d'activité |
+| **Qualification institutionnelle** | opérateur de l'État (avec **période de validité**) et programme budgétaire chef de file |
+| **Territorialisation** | adresse réordonnée, code postal corrigé, NUTS2, Région, NUTS3, statut Metro / RUP / PTOM |
+| **Identification de projet** | `Référence projet complétée`, dérivée du libellé de l'objet quand la Commission ne la fournit pas |
+| **Mémoire inter-millésimes** | les SIREN certains d'un millésime sont réutilisés sur les autres, sans nouvel appel réseau |
 | **Traçabilité** | rapport d'audit exhaustif avec score, stratégie gagnante et code couleur |
 
 ---
@@ -71,19 +88,31 @@ variations d'en-têtes d'une livraison à l'autre.
 | Nom du bénéficiaire | `name of beneficiary`, `nom benefi`… | **obligatoire** |
 | Pays | `beneficiary country`, `country`, `pays` | **obligatoire** |
 | Numéro de TVA | `vat number`, `tva` | fortement recommandé |
+| **Main registration number** | `main registration` | **millésime 2025+** — évite une recherche |
 | Adresse | `address`, `adresse`, `street` | améliore le score |
 | Ville | `city`, `ville` | améliore le score |
 | Code postal | `postal code`, `code postal`, `zip` | améliore fortement le score |
 | NUTS2 | `nuts2` | utile |
 | Montant | `contracted amount` | requis pour la règle « A CHERCHER » |
+| **Objet du contrat** | `subject of grant` | source de la `Référence projet complétée` |
+
+> **Un export FTS ne contient qu'un seul millésime** (vérifié : le fichier 2025
+> ne porte que `Year = 2025`). C'est ce qui justifie le mécanisme de mémoire
+> décrit au §8.
+
+**Fichier optionnel à déposer avec le FTS** : `correspondance_siren.json`,
+produit par une exécution antérieure (voir §2.2). Sa présence n'est pas
+nécessaire — un socle de correspondances est embarqué en dur dans le notebook —
+mais elle enrichit la mémoire des exécutions précédentes.
 
 ### 2.2 Fichiers de sortie
 
 | Fichier | Contenu | Usage |
 |---|---|---|
-| `<nom>_GLOBAL.xlsx` | toutes les lignes, tous pays, enrichissement transversal (zone UE/AELE/UK, période CFP) | vue d'ensemble |
+| `<nom>_GLOBAL.xlsx` | toutes les lignes, tous pays, enrichissement transversal (zone UE/AELE/UK, période CFP, référence projet) | vue d'ensemble |
 | `<nom>_FRANCE.xlsx` | lignes françaises **entièrement enrichies** ; ne contient que les TVA de score ≥ 96 | vue FRANCE |
 | `<nom>_RAPPORT_TVA.xlsx` | **toutes** les recherches, y compris les échecs, avec score et stratégie | audit, correction manuelle |
+| `correspondance_siren.json` | mémoire des couples (nom, département) → SIREN certains | à redéposer au traitement du millésime suivant |
 
 > Le rapport n'est **pas** créé si aucune TVA n'était manquante : c'est normal,
 > l'orchestration vérifie l'existence du fichier avant de le télécharger.
@@ -114,12 +143,14 @@ locale. Il détecte automatiquement son environnement (`IN_COLAB`).
 | 5 | 13 | chargement des référentiels **puis dépôt du fichier FTS** |
 | 6 | 15 | **orchestration : le traitement complet** |
 
-
 ### 3.3 Durée et facteur limitant
 
 La durée est dominée par les appels à l'API publique, cadencés par
 `DELAI_API = 0.15 s`. Sur un fichier volumineux, comptez **plusieurs heures**.
 
+> Sur un export **2025**, la Passe 0 (*Main Registration*) et la Passe mémoire
+> évitent la recherche pour une grande partie des lignes : la durée réelle est
+> nettement inférieure à celle d'un millésime ancien de même volume.
 
 ### 3.4 Exécution locale (Jupyter)
 
@@ -140,31 +171,40 @@ jupyter notebook
 
 ```
 ┌─ CELLULE 1 ──── installation des paquets
-├─ CELLULE 2 ──── RÉFÉRENTIELS EMBARQUÉS (JSON en dur, ~4 900 lignes)
+├─ CELLULE 2 ──── RÉFÉRENTIELS EMBARQUÉS (blocs JSON en dur, ~900 Ko)
 ├─ CELLULE 3 ──── imports, seuils, couleurs, détection Colab
 ├─ CELLULE 4 ──── MOTEUR DE RECHERCHE  ← 5 fonctions FIGÉES
 │                 + enveloppe rechercher_tva_plus (modifiable)
-├─ CELLULE 5 ──── Étape A : enrichissement TVA (2 passes)
+│                 + tables de forçage manuel (§10)
+├─ CELLULE 5 ──── Étape A : enrichissement TVA (Passes 0, mémoire, 1, 2)
 ├─ CELLULE 6 ──── export du rapport
 ├─ CELLULE 7 ──── Étape A3 : complétion géographique SIRENE
-├─ CELLULE 8 ──── nettoyage géographique (NUTS2, région, NUTS3)
-├─ CELLULE 9 ──── chargement des référentiels, zones pays, doublons
+├─ CELLULE 8 ──── nettoyage géographique (adresse, NUTS2, région, NUTS3)
+├─ CELLULE 9 ──── chargement des référentiels, zones pays, doublons,
+│                 enrichissement GLOBAL + Référence projet complétée
 ├─ CELLULE 10 ─── Étapes C, D, E, SGAE, NAF
 ├─ CELLULE 11 ─── export du fichier + règle AUTRE / A CHERCHER
 ├─ CELLULE 13 ─── chargement des référentiels et du fichier FTS
 └─ CELLULE 15 ─── ORCHESTRATION (à lancer en dernier)
 ```
 
+### 4.2 Les référentiels embarqués
+
+Volumes constatés dans la **v5_41** (compteurs affichés par la cellule 13) :
 
 | Référentiel | Volume | Contenu | Source |
 |---|---|---|---|
-| `GEO_FRANCE` | 108 | département → NUTS3, région, NUTS2, territoire | table SGAE + Eurostat NUTS 2021 |
+| `GEO_FRANCE` | 108 départements | département → NUTS3, région, NUTS2, territoire ; désambiguïsation par CP et par pays | table SGAE + Eurostat NUTS 2021 |
 | `VILLES_FR` | 31 950 | commune → département | COG INSEE |
-| `FORMES_JURIDIQUES` | 269 | catégories juridiques, 3 niveaux | INSEE `cj_septembre_2022` |
+| `FORMES_JURIDIQUES` | 269 codes | catégories juridiques, 3 niveaux | INSEE `cj_septembre_2022` |
 | `REF_SGAE` | 262 | code juridique → catégorie simplifiée | référentiel métier SGAE |
 | `NAF_REV2` | 732 | code NAF → libellé | INSEE NAF rév. 2 |
-| `OPERATEURS_ETAT` | 69 | SIREN → opérateur + programme | liste SGAE, SIREN vérifiés |
-| `ETATS`, `SOUS_CATEGORIES`, `CFP_REGLES`, `PAYS_ALIAS` | — | zones, programmes, périodes CFP | Commission / SGAE |
+| `NAF2025_SECTIONS` | 22 sections / 87 divisions | division → section NAF 2025 | INSEE NAF 2025 |
+| `OPERATEURS_ETAT` | **443 SIREN**, 440 programmes, **438 périodes de validité** | SIREN → opérateur, programme chef de file, années de validité | annexe « Jaune » opérateurs de l'État |
+| `SOUS_CATEGORIES` | **198 programmes** | programme → famille | Commission / SGAE |
+| `ETATS` | 32 | pays → code ISO, zone | Commission / SGAE |
+| `PAYS_ALIAS` | 27 alias ISO, 27 territoires FR | variantes de libellés pays | ISO + observation du FTS |
+| `CFP_REGLES` | 10 instruments hors CFP | périodes CFP et exceptions | Commission |
 
 ### 4.3 Le déroulé complet (cellule 15)
 
@@ -172,30 +212,33 @@ jupyter notebook
   fichier FTS brut (df_brut)
         │
         ├─ ÉTAPE 0 ── enrichissement GLOBAL (tous pays)
-        │             zone UE/AELE/UK · période CFP · nom nettoyé
+        │             zone UE/AELE/UK · période CFP · dépense CFP
+        │             sous-catégorie · nom nettoyé · n° et type de projet
+        │             Référence projet complétée              ← v5_41
         │             └──> export <nom>_GLOBAL.xlsx
         │
         ├─ FILTRE ─── lignes France uniquement
         │
-        ├─ ÉTAPE A ── PASSE 1 : lignes sans TVA → RECHERCHE (API)
+        ├─ ÉTAPE A ── PASSE 0 : SIREN fourni par la Commission (Main Registration)
+        │             PASSE MÉMOIRE : SIREN connu d'un autre millésime
+        │             PASSE 1 : lignes restantes sans TVA → RECHERCHE (API)
         │             PASSE 2 : lignes avec TVA → DOCUMENTATION
         │
         ├─ ÉTAPE A2 ─ réconciliation des doublons de graphie
         ├─ ÉTAPE A3 ─ complétion géographique par le siège SIRENE
         ├─ ÉTAPE E ── correction des états « Cessée » faussés
-        ├─ NETTOYAGE  CP corrigé · NUTS2 · Région_FR · NUTS3
+        ├─ NETTOYAGE  adresse réordonnée · CP corrigé · NUTS2 · Région · NUTS3
         ├─ ÉTAPE C ── Metro / RUP / PTOM
-        ├─ ÉTAPE D ── opérateur de l'État + programme
+        ├─ ÉTAPE D ── opérateur de l'État + programme (avec période)
         ├─ ÉTAPE SGAE statut juridique simplifié
-        ├─ ÉTAPE NAF  libellé d'activité principale
+        ├─ ÉTAPE NAF  libellé d'activité principale + section NAF 2025
         │
-        ├─ FINITION ─ « AUTRE » / « A CHERCHER »
+        ├─ NOM API ── écriture officielle de l'annuaire
+        ├─ FINITION ─ « AUTRE » / « A CHERCHER » (généralisée)
         │             retrait des colonnes de travail
         │
-        └──> <nom>_FRANCE.xlsx  +  <nom>_RAPPORT_TVA.xlsx
+        └──> <nom>_FRANCE.xlsx + <nom>_RAPPORT_TVA.xlsx + correspondance_siren.json
 ```
-
----
 
 ---
 
@@ -203,7 +246,7 @@ jupyter notebook
 
 Avant tout traitement français, le pipeline enrichit **l'intégralité** du fichier,
 quelle que soit la nationalité du bénéficiaire. Cette étape produit le fichier
-`<nom>_GLOBAL.xlsx` et **huit colonnes**. Elle ne fait **aucun appel API** :
+`<nom>_GLOBAL.xlsx` et **neuf colonnes**. Elle ne fait **aucun appel API** :
 tout est calculé à partir des référentiels embarqués — elle est donc rapide.
 
 ### 5.1 Les colonnes produites
@@ -216,6 +259,7 @@ tout est calculé à partir des référentiels embarqués — elle est donc rapi
 | `Sous catégorie` | **avant** `Programme name` | famille de programme |
 | `Période CFP` | après `Programme name` | cadre financier pluriannuel |
 | `Dépense CFP` | après `Période CFP` | période d'**imputation** réelle |
+| **`Référence projet complétée`** | après `Project / Contract Reference` | référence numérique du projet — **v5_41** |
 | `N° projet` | après la référence LC | numéro séquentiel de projet |
 | `Type de projet` | après `N° projet` | **Mono** / **Collaboratif** / **Indéterminé** |
 
@@ -229,6 +273,9 @@ Seules les **étoiles finales** sont retirées : `« NOM* »` → `« NOM »`.
 > les stratégies `STAR` et `SIGLE` du moteur. Les noms entièrement composés
 > d'étoiles (bénéficiaires anonymisés) sont laissés **intacts**.
 
+Depuis la v5_39, cette colonne reçoit également le **nom officiel SIRENE** pour
+les lignes identifiées par la Passe 0 ou la Passe mémoire.
+
 ### 5.3 `FR / UE / UK / AELE / AUTRE` et `Etats`
 
 Classement en cinq zones, avec trois particularités :
@@ -236,7 +283,8 @@ Classement en cinq zones, avec trois particularités :
 1. Les **DOM-TOM et RUP** sont reconnus comme **FR**, même écrits sous leur nom
    propre (Guadeloupe, Nouvelle-Calédonie…).
 2. Un dictionnaire d'**alias** absorbe les variantes de libellé (traductions,
-   graphies anciennes).
+   graphies anciennes, troncatures de l'export Commission — `« Republ »` → Serbie,
+   `« Republic o »` → Monténégro).
 3. Si le pays est inconnu du référentiel, un **repli ISO** tente de retrouver le
    code ; à défaut, la ligne est classée `AUTRE` et **signalée** en fin
    d'exécution avec son nombre d'occurrences.
@@ -279,12 +327,63 @@ se fait en analysant le libellé de la ligne budgétaire (`Budget line name`) :
 
 ### 5.6 `Sous catégorie`
 
-Rattache chaque `Programme name` à une famille de programmes (185 programmes
-référencés). Un programme inconnu reçoit `NA` et est **listé nommément** en fin
-d'exécution, avec son volume : c'est le signal qu'il faut enrichir
-`SOUS_CATEGORIES.json`.
+Rattache chaque `Programme name` à une famille de programmes (**198 programmes**
+référencés depuis la v5_33). Un programme inconnu reçoit `NA` et est **listé
+nommément** en fin d'exécution, avec son volume : c'est le signal qu'il faut
+enrichir `SOUS_CATEGORIES`.
 
-### 5.7 `N° projet` et `Type de projet` — l'analyse collaborative
+### 5.7 `Référence projet complétée` — nouveauté v5_41
+
+Les trois colonnes d'identification de projet de la Commission
+(`Call for proposals Reference`, `Project / Contract Reference`,
+`Project / Contract Acronym`) ne sont alimentées **qu'à partir du millésime
+2025**. Sur tous les millésimes antérieurs, elles portent
+`N/A - Not applicable` — alors que la référence figure bel et bien **en tête du
+libellé** `Subject of grant or contract` :
+
+```
+« 101177660 - MAKE-A-THEK - MODULAR LIBRARY MAKERSPACES FOR HERITAGE CRAFTS… »
+   └ référence du projet
+```
+
+Une colonne `Référence projet complétée` est donc créée **juste après**
+`Project / Contract Reference`, sans jamais modifier celle-ci (règle 3) :
+
+| Cas | Contenu de la colonne |
+|---|---|
+| la Commission a renseigné la référence | sa valeur, **recopiée telle quelle** |
+| colonne d'origine vide ou `N/A` | la référence extraite du libellé |
+| aucune référence identifiable | **`NA`** |
+
+**La référence est toujours NUMÉRIQUE**, de 6 à 9 chiffres. Deux motifs
+seulement sont reconnus :
+
+| Motif | Exemple | Résultat |
+|---|---|---|
+| `NUM_EN_TETE` | `643271 - ERACoSysMed - …` | `643271` |
+| `NUM_APRES_CODE_APPEL` | `KBBE-2013 613960 SMARTBEES` | `613960` |
+
+Dans le second cas, le code de tête (`KBBE-2013`, `FP7-SEC-2013`…) désigne
+l'**appel à propositions**, pas le projet : seul le nombre est retenu, et
+uniquement s'il apparaît dans les 60 premiers caractères du libellé.
+
+> **Tout ce qui n'est pas numérique est refusé.** Les codes TEN-T
+> (`2012-DE-17022-S`), les codes à barres obliques (`VS/2014/0582`) et les codes
+> à tirets (`TA-1117`) ne sont **pas** capturés : ce sont des identifiants
+> d'une autre nature. De même, le plancher de 6 chiffres écarte les nombres
+> courts en tête de libellé, qui sont des années ou des numéros d'ordre
+> (`2013 11 02 OPTTEST…`, `2014 86 01 NEGOTIATED…`).
+
+Le bilan de fin d'étape distingue les trois cas (reprises de la Commission,
+dérivées, `NA`), donne la répartition par motif et liste les 15 premières formes
+de libellés non reconnues, pour arbitrage.
+
+> **Contrôle recommandé au premier passage** : sur un fichier **2025**, où la
+> Commission renseigne déjà tout, comparez sa référence et celle qu'aurait
+> produite la dérivation. C'est le test de fiabilité le plus direct avant
+> d'appliquer la règle aux millésimes antérieurs.
+
+### 5.8 `N° projet` et `Type de projet` — l'analyse collaborative
 
 C'est l'enrichissement le plus élaboré de l'étape globale.
 
@@ -320,7 +419,7 @@ adresse, alors A, B et C ne comptent que pour **un** bénéficiaire. C'est ce qu
 permet de rapprocher des libellés rédigés en plusieurs langues sur un même
 projet européen.
 
-### 5.8 Les alertes de fin d'étape
+### 5.9 Les alertes de fin d'étape
 
 L'étape globale se termine par un bilan à lire attentivement :
 
@@ -328,9 +427,10 @@ L'étape globale se termine par un bilan à lire attentivement :
 Zone géographique : FR 12 345 | UE 6 789 | UK 234 | AELE 56 | AUTRE 78
 Période CFP : 14-20 5 000 | 21-27 14 000 | Hors CFP 500
 Dépense CFP : 2014-2020 5 500 | 2021-2027 13 500 | Hors CFP 500
+Référence projet complétée : Commission 5 813 | dérivées 12 004 | NA 2 690
 Projets : 8 234 distincts | lignes Mono 15 000 | Collaboratif 4 000 | Indéterminé 500
-⚠️ 3 pays sans code Etat (absents d'ETATS.json + ISO introuvable) :
-⚠️ 12 programme(s) absents de SOUS_CATEGORIES.json (Sous catégorie = NA) :
+⚠️ 3 pays sans code Etat (absents d'ETATS + ISO introuvable) :
+⚠️ 12 programme(s) absents de SOUS_CATEGORIES (Sous catégorie = NA) :
 ```
 
 Chaque `⚠️` désigne un référentiel à compléter, avec le volume concerné pour
@@ -368,6 +468,9 @@ Pour un bénéficiaire donné :
 première qui aboutit gagne, les suivantes ne sont pas tentées — c'est à la fois
 une garantie de qualité (le résultat le plus contraint l'emporte) et une
 économie d'appels API.
+
+> **Le moteur n'est sollicité qu'en Passe 1**, c'est-à-dire pour les lignes qui
+> n'ont ni TVA, ni Main Registration exploitable, ni correspondance en mémoire.
 
 ### 6.2 La détection de type
 
@@ -478,12 +581,15 @@ Tentées en dernier, quel que soit le type détecté :
 | `G8_NOM_TRONQUE` | 42 premiers caractères | non |
 | `G9_NOM_VILLE` | 2 premiers mots + ville | non |
 
-#### Stratégies hors moteur (enveloppe)
+#### Stratégies hors moteur (enveloppe et passes amont)
 
 Elles apparaissent aussi dans la colonne `Strategie` du rapport :
 
 | Code | Signification |
 |---|---|
+| `MAIN_REGISTRATION` | **Passe 0** : SIREN fourni par la Commission, validé par la clé de Luhn (score 100) |
+| `MEMOIRE_CORRESPONDANCE` | **Passe mémoire** : couple (nom, département) déjà résolu lors d'un autre millésime (score 100) |
+| `MEMOIRE_NOM_SEUL` | Passe mémoire, repli : le nom ne correspond qu'à **un seul** SIREN dans toute la mémoire (déménagement entre millésimes) |
 | `ALIAS_SIREN` | SIREN imposé par une correction vérifiée ou un alias (score forcé à 100) |
 | `FAUX_POSITIF_ECARTE` | résultat annulé : couple (bénéficiaire, SIREN) banni |
 | `SANS_TVA_MANUEL` | bénéficiaire exclu de toute recherche (République française) |
@@ -559,15 +665,18 @@ versions. Chaque retouche antérieure a fait perdre des TVA correctes.
 
 *Comment évoluer malgré tout* : par l'**enveloppe** `rechercher_tva_plus`, ou en
 **lecture seule** sur la réponse de l'API. Toutes les fonctionnalités ajoutées
-depuis la v5_2 l'ont été ainsi, sans toucher une ligne du moteur.
+depuis la v5_2 l'ont été ainsi, sans toucher une ligne du moteur — y compris les
+Passes 0 et mémoire, qui s'intercalent **avant** lui, et la colonne `Nom API`,
+obtenue par une enveloppe de lecture (`_fiche_avec_nom`).
 
 *Vérification obligatoire à chaque livraison* : comparaison bit à bit du corps
-des cinq fonctions avec la version de référence (§12).
+des cinq fonctions avec la version de référence (§13).
 
 ### Règle 2 — Chercher sur les données brutes
 
 La recherche utilise le nom, l'adresse et le code postal **d'origine**. Le
-nettoyage sert uniquement à l'affichage (`Bénéficiaire corrigé`).
+nettoyage sert uniquement à l'affichage (`Bénéficiaire corrigé`,
+`Adresse réordonnée`).
 
 *Pourquoi* : nettoyer avant de chercher supprime des sigles discriminants et
 dégrade le taux d'identification.
@@ -579,6 +688,11 @@ sa colonne source, peinte en **bleu `BDD7EE`**.
 
 *Pourquoi* : le fichier livré doit rester auditable ; on doit toujours pouvoir
 comparer la valeur calculée à la valeur d'origine.
+
+*Application récente* : la v5_40 a créé `Adresse réordonnée` plutôt que de
+corriger la colonne `Address` de la Commission ; la v5_41 a créé
+`Référence projet complétée` plutôt que de remplir
+`Project / Contract Reference`.
 
 ### Règle 4 — Ne pas pénaliser les entités radiées
 
@@ -622,7 +736,6 @@ nationaux) ont été signalées comme incomplètes. Vérification faite : **18/1
 ARS, **6/6** agences de l'eau, **11/11** parcs nationaux figuraient déjà au
 référentiel. Les lignes `« … GLOBAL »` sont des **agrégats de famille**, pas des
 entités : elles n'ont pas de SIREN propre et ne doivent jamais être recherchées.
-
 ---
 
 ## 8. Les enrichissements, étape par étape
@@ -630,20 +743,75 @@ entités : elles n'ont pas de SIREN propre et ne doivent jamais être recherché
 ### Étape 0 — Enrichissement global
 
 Toutes lignes, tous pays : zone (`FR` / `UE` / `UK` / `AELE` / `AUTRE`), code
-ISO, période CFP (2014-2020, 2021-2027, 2028-2034), sous-catégorie de
-programme, nom nettoyé. Produit le fichier `_GLOBAL`.
+ISO, période CFP, dépense CFP, sous-catégorie de programme, nom nettoyé, numéro
+et type de projet, et **référence projet complétée** (§5.7). Produit le fichier
+`_GLOBAL`.
 
-### Étape A — Enrichissement TVA (deux passes)
+### Étape A — Enrichissement TVA (quatre passes)
 
-| | Passe 1 | Passe 2 |
-|---|---|---|
-| **Cible** | lignes **sans** TVA | lignes **avec** TVA |
-| **Action** | recherche via le moteur | documentation seulement |
-| **Appels API** | plusieurs par ligne | un par SIREN (mis en cache) |
-| **Résultat** | TVA + SIREN + SIRET + qualification | SIRET + forme + NAF + état |
+L'ordre est une **cascade du plus certain au plus coûteux** : chaque passe ne
+traite que ce que les précédentes n'ont pas résolu.
 
-*Principe* : une TVA fournie par la Commission n'est **jamais** remise en cause,
-seulement enrichie.
+| | Passe 0 | Passe mémoire | Passe 1 | Passe 2 |
+|---|---|---|---|---|
+| **Cible** | lignes sans TVA mais avec *Main Registration* | lignes sans TVA dont le couple (nom, département) est déjà connu | lignes restantes sans TVA | lignes **avec** TVA |
+| **Action** | lecture directe du SIREN | réutilisation du SIREN mémorisé | recherche via le moteur | documentation seulement |
+| **Appels de recherche** | **aucun** | **aucun** | plusieurs par ligne | aucun (une fiche par SIREN, mise en cache) |
+| **Score / stratégie** | 100 / `MAIN_REGISTRATION` | 100 / `MEMOIRE_*` | variable | 100 / `TVA_EXISTANTE` |
+
+**Passe 0 — le SIREN fourni par la Commission.** L'export FTS 2025 introduit la
+colonne `Main registration number of beneficiary`. Sur les lignes françaises
+vérifiées, 5 466 sur 5 813 portaient un SIREN, **100 % valides au sens de la clé
+de Luhn**, recoupés indépendamment sur des cas connus (CNRS `180089013`,
+Airbus `383474814`, Thales `552059024`).
+
+> **C'est un champ générique européen** : chaque pays y inscrit son registre
+> national dans son propre format (Allemagne `VR7795`, Belgique numéro
+> d'entreprise, Italie et Espagne codes provinciaux). Il n'est donc exploité que
+> pour les **lignes France**, et seulement si la valeur ressemble à un SIREN
+> (9 chiffres) **et** passe la clé de Luhn. Un SIRET fourni par erreur (14
+> chiffres) voit ses 9 premiers chiffres repris. Colonne absente (millésimes
+> antérieurs à 2025) : la passe est ignorée proprement.
+>
+> Les bénéficiaires « sans TVA possible » (République française) n'entrent
+> **jamais** dans cette passe.
+
+**Passe mémoire — réutiliser un millésime sur l'autre.** Un export FTS ne
+contient qu'un seul millésime. Les SIREN certains obtenus par la Passe 0 ou par
+la Passe 2 sont donc **mémorisés** sous la clé « nom normalisé + département
+déduit du code postal », puis exportés dans `correspondance_siren.json`. Au
+traitement d'un millésime ancien (2014-2024, sans *Main Registration*), il
+suffit de redéposer ce fichier : les bénéficiaires déjà connus sont documentés
+directement, **sans aucun appel de recherche**.
+
+> **Pourquoi la clé comporte le département** et non le nom seul : pour ne pas
+> confondre deux implantations réellement distinctes portant le même nom (une
+> chambre de commerce régionale, par exemple).
+>
+> **Repli « nom seul »** (v5_36) : si le couple (nom, département) ne
+> correspond pas mais que le nom ne renvoie qu'à **un seul** SIREN dans toute la
+> mémoire, celui-ci est réutilisé — cas des déménagements entre millésimes
+> (CARE FRANCE, 93 → 75). Plusieurs SIREN pour un même nom : on ne tranche pas,
+> la recherche normale reprend. L'étiquette `MEMOIRE_NOM_SEUL` rend le cas
+> repérable au rapport.
+>
+> **Socle embarqué** (v5_37) : 338 correspondances fiables du millésime 2025
+> sont intégrées **en dur** dans le notebook. Le dépôt du fichier JSON n'est
+> donc pas obligatoire ; s'il est fourni, il se fusionne par-dessus le socle et
+> ses entrées l'emportent.
+>
+> **Portée intra-fichier** (v5_34) : la mémoire est alimentée dès la lecture du
+> *Main Registration*, avant le calcul du périmètre de recherche. Un
+> bénéficiaire présent sur plusieurs lignes du même fichier, dont une seule
+> porte un *Main Registration*, en fait donc profiter ses lignes sœurs.
+
+**Passe 1 — la recherche.** Elle ne porte plus que sur les lignes qui n'ont ni
+TVA, ni *Main Registration* exploitable, ni correspondance en mémoire. C'est la
+seule passe qui sollicite le moteur figé (§6).
+
+**Passe 2 — la documentation.** Une TVA fournie par la Commission n'est
+**jamais** remise en cause, seulement enrichie : SIRET, forme juridique, NAF,
+état, et depuis la v5_40, `Nom API`.
 
 ### Étape A2 — Réconciliation des doublons
 
@@ -661,6 +829,22 @@ colonnes de **travail** (`Adresse (SIRENE)`, `Ville (SIRENE)`,
 > Ces colonnes alimentent les calculs en aval puis sont **retirées du fichier
 > final**. Ce sont des échafaudages, pas des livrables.
 
+### Désambiguïsation d'établissement (best-effort)
+
+Pour les bénéficiaires multi-établissements identifiés par la Passe 0 ou la
+Passe mémoire : quand le code postal de la ligne FTS diffère de celui du siège,
+une recherche par nom + département tente de retrouver l'établissement
+correspondant à **ce** code postal, dont le SIRET remplace celui du siège.
+
+> **Limite assumée et vérifiée.** L'API publique
+> `recherche-entreprises.api.gouv.fr` ne permet **pas** de lister tous les
+> établissements d'un SIREN : un filtre géographique combiné à une requête SIREN
+> est silencieusement ignoré, et `matching_etablissements` reste souvent vide.
+> Le contournement implémenté est légitime mais **best-effort** : en l'absence
+> de résultat probant, repli systématique sur le SIRET du siège. Jamais
+> d'établissement deviné. Une désambiguïsation garantie supposerait l'API Sirene
+> authentifiée de l'INSEE, hors du périmètre actuel.
+
 ### Étape E — Correction des états « Cessée » faussés
 
 *Problème* : une université fusionnée conserve un ancien SIREN cessé portant le
@@ -675,6 +859,19 @@ entité réellement fermée reste « Cessée ».
 
 *Exemple* : Université Clermont Auvergne — `130022775` (cessé) → `130028061`
 (actif).
+
+### Nettoyage de l'adresse
+
+Les adresses FTS sont fréquemment rédigées « voie puis numéro »
+(`RUE BISCORNET 9`). Une colonne **`Adresse réordonnée`** est créée juste après
+l'adresse d'origine : elle porte l'adresse remise à la norme française
+(`9 RUE BISCORNET`) quand une correction s'applique, **sinon l'adresse d'origine
+telle quelle**. Les cellules réellement réordonnées sont surlignées.
+
+> La colonne `Address` de la Commission n'est **plus jamais modifiée**
+> (règle 3). Le moteur de recherche continue d'utiliser l'adresse **brute**
+> (règle 2) — et il s'exécute de toute façon **avant** le réordonnancement :
+> aucun impact sur les TVA trouvées.
 
 ### Nettoyage géographique
 
@@ -716,11 +913,17 @@ Distinction **juridique** européenne, pas géographique :
 
 ### Étape D — Opérateurs de l'État
 
-Deux mécanismes complémentaires :
+Le référentiel couvre désormais **443 SIREN** (annexe « Jaune » complète), avec
+**période de validité** pour 438 d'entre eux. Trois mécanismes :
 
-1. **Par SIREN** — appartenance au référentiel des 69 opérateurs ;
-   `Programme_Operateur` reçoit le programme budgétaire chef de file.
-2. **Par famille** (repli) — si l'identification par SIREN a échoué, un motif de
+1. **Par SIREN** — appartenance au référentiel ; `Programme_Operateur` reçoit le
+   programme budgétaire chef de file.
+2. **Par période** — `Operateur_Etat` vaut `oui` seulement si l'année de la
+   ligne tombe dans une période de validité de l'opérateur. Une structure créée
+   en 2019 n'est donc pas comptée comme opérateur sur une ligne de 2015.
+   Le décalage **N-1** est appliqué sur la borne de début de chaque période
+   (v5_29), et plusieurs périodes disjointes sont admises pour un même SIREN.
+3. **Par famille** (repli) — si l'identification par SIREN a échoué, un motif de
    nom reconnaît les **ARS**, **agences de l'eau** et **parcs nationaux**.
 
 Ce repli ne s'applique **que** si le SIREN n'a pas suffi : il ne peut jamais
@@ -736,29 +939,52 @@ Les 269 catégories INSEE sont trop fines pour un tableau de bord. La grille SGA
 > libellés ne concordent qu'à **66 %** entre référentiels (« SA » vs « Société
 > anonyme ») ; les codes concordent à **100 %**.
 
-### Étape NAF — Libellé d'activité
+### Étape NAF — Libellé d'activité et section
 
 L'API renvoie le **code** NAF mais pas son libellé (vérifié dans son code
 source). La jointure se fait donc sur le code avec la nomenclature NAF rév. 2
-embarquée — ce qui garantit un libellé **uniforme** quelle que soit la façon
-dont la ligne a été identifiée.
+embarquée (732 sous-classes) — ce qui garantit un libellé **uniforme** quelle
+que soit la façon dont la ligne a été identifiée.
+
+Une colonne `Section_NAF` complète le dispositif : elle rattache la division du
+code NAF à l'une des **22 sections** de la NAF 2025 (87 divisions référencées),
+pour une lecture agrégée par grand secteur d'activité.
+
+### Nom API
+
+Une colonne `Nom API`, placée juste après `Bénéficiaire corrigé`, porte
+l'**écriture exacte** du bénéficiaire telle que retournée par l'annuaire des
+entreprises. Elle est alimentée avec trois priorités : rapport avec TVA
+retenue, puis passe 2, puis autres lignes du rapport (candidat écarté). Elle est
+vide quand aucune fiche API n'a été obtenue.
+
+> Son intérêt est la **comparaison** : `Bénéficiaire corrigé` reste le libellé
+> FTS nettoyé, `Nom API` donne la dénomination officielle. L'écart entre les
+> deux est un bon indicateur de la qualité d'un appariement, et un signal de
+> renommage d'entité.
+>
+> Aucun appel API supplémentaire n'est fait pour l'obtenir : c'est une lecture
+> des fiches déjà récupérées (`_fiche_avec_nom`).
 
 ---
 
 ## 9. Seuils, couleurs et conventions de sortie
 
-### 8.1 Les trois seuils
+### 9.1 Les seuils
 
 | Constante | Valeur | Où | Effet |
 |---|---|---|---|
 | `SEUIL_SCORE` | **80** | cellule 3 | en dessous : candidat rejeté, rien n'est retenu |
 | `SEUIL_HAUTE_CONF` | **92** | cellule 3 | au-dessus : ligne verte ; entre 80 et 92 : jaune |
+| `SEUIL_EXACTITUDE_REPLI` | **90** | cellule 4 | exactitude de nom minimale pour le repli `REPLI_EXACT` |
 | `SEUIL_FICHIER_TVA` | **96** | cellule 5 | en dessous : la TVA reste au rapport, **pas** dans le fichier |
 | `SEUIL_MONTANT_A_CHERCHER` | **300 000 €** | cellule 11 | au-dessus : mention `A CHERCHER` au lieu de `AUTRE` |
+| `DELAI_API` | **0,15 s** | cellule 3 | cadence des appels (≈ 7 requêtes/s) |
+| `MAX_PAR_REQUETE` | **8** | cellule 3 | candidats examinés par requête |
 
-### 8.2 La règle de remplissage final
+### 9.2 La règle de remplissage final
 
-Pour une ligne **sans TVA retenue** (aucune trouvée, ou score < 96) :
+Pour une ligne **sans identification retenue** (aucune trouvée, ou score < 96) :
 
 ```
         montant cumulé du bénéficiaire ≥ 300 000 € ?
@@ -775,38 +1001,66 @@ Pour une ligne **sans TVA retenue** (aucune trouvée, ou score < 96) :
 Le montant est la **somme de tous les contrats** du bénéficiaire, pas celui de
 la ligne : un bénéficiaire présent 50 fois pour 10 000 € franchit le seuil.
 
-Les colonnes `SIREN`, `SIRET`, `Forme_juridique` vides reçoivent `AUTRE`.
+**Périmètre généralisé depuis la v5_40** — la mention `A CHERCHER` ne concerne
+plus la seule TVA. Elle s'applique à : `SIREN`, `SIRET`, `Forme_juridique`,
+`Niveau_I/II/III`, `Code_NAF_APE`, `Activite_principale`, `Section_NAF`,
+`Etat_entreprise` et `Référentiel SGAE`.
 
-### 8.3 Code couleur
+Toutes les **autres** colonnes ajoutées par le pipeline (`Nom API`,
+`Adresse réordonnée`, géographie, CFP, opérateurs…) reçoivent `AUTRE` quand la
+case est vide.
+
+> **Deux exceptions permanentes.** « République française » et les personnes
+> physiques anonymisées (`NATURAL PERSON`, `PERSONNE PRIVÉE`, `Art. 38(7)`…) ne
+> reçoivent **jamais** `A CHERCHER` : toutes leurs cases vides passent à
+> `AUTRE`. Il n'y a rien à chercher, donc rien à signaler.
+>
+> **`Référence projet complétée` ne suit pas cette règle** : elle porte son
+> propre `NA` dès l'étape 0, et n'entre donc ni dans `A CHERCHER` ni dans
+> `AUTRE`.
+>
+> Le **rapport**, lui, conserve toujours l'intégralité de l'information : ces
+> substitutions ne concernent que le fichier livré.
+
+### 9.3 Code couleur
 
 | Couleur | Code | Où | Signification |
 |---|---|---|---|
 | 🔵 Bleu clair | `BDD7EE` | fichier | **colonne ajoutée** par le pipeline (en-tête + cellules non vides) |
 | 🟢 Vert clair | `C6EFCE` | fichier | TVA trouvée en **haute confiance** (score ≥ 92) |
 | 🟡 Jaune | `FFEB9C` | fichier | TVA trouvée, confiance moyenne (80 ≤ score < 92) |
+| 🟩 Vert vif | `00B050` | fichier | **cellule corrigée** (adresse réordonnée, valeur reprise) |
 | 🟠 Orange | `FFC000` | **rapport** | **à chercher à la main** : score < 96 **et** montant ≥ 300 k€ |
 
 > Une cellule **vide** d'une colonne ajoutée reste **non peinte** : c'est voulu,
 > cela met en évidence les trous de données.
 
-### 8.4 Les colonnes produites
+### 9.4 Les colonnes produites
 
 | Colonne | Position | Contenu |
 |---|---|---|
 | `Bénéficiaire corrigé` | après le nom | nom nettoyé ou nom officiel |
-| `SIREN`, `SIRET` | après la TVA | identifiants INSEE |
+| `Nom API` | après `Bénéficiaire corrigé` | écriture officielle de l'annuaire |
+| `Adresse réordonnée` | après l'adresse | adresse à la norme française, ou adresse d'origine |
+| `Référence projet complétée` | après `Project / Contract Reference` | référence numérique du projet, ou `NA` |
+| `SIREN` | après `Main registration number` | identifiant INSEE, comparable au SIREN Commission |
+| `SIRET` | après la TVA | identifiant d'établissement |
 | `Référentiel SGAE` | **avant** `Forme_juridique` | catégorie juridique simplifiée |
 | `Forme_juridique` | — | libellé INSEE + code entre parenthèses |
 | `Niveau_I`, `Niveau_II`, `Niveau_III` | — | 3 niveaux de la nomenclature juridique |
 | `Code_NAF_APE` | — | code d'activité |
 | `Activite_principale` | **après** `Code_NAF_APE` | libellé NAF rév. 2 |
+| `Section_NAF` | après `Activite_principale` | section NAF 2025 |
 | `Etat_entreprise` | — | « En activité » / « Cessée » |
-| `Operateur_Etat` | après `Etat_entreprise` | 1 / 0 |
+| `Operateur_Etat` | après `Etat_entreprise` | oui / non (selon la période de validité) |
 | `Programme_Operateur` | après `Operateur_Etat` | programme chef de file, ou `AUTRE` |
 | `Code postal corrigé` | après le CP | CP réparé (zéro initial, etc.) |
 | `NUTS2 corrigé` | après `NUTS2` | ancienne région |
 | `Metro/RUP/PTOM` | avant `Région_FR` | statut territorial |
 | `Région_FR`, `NUTS3 FR`, `NUTS3_Numéro` | — | région actuelle, NUTS3, n° de département |
+| `FR/UE/UK/AELE/AUTRE`, `Etats` | après le pays | zone et code ISO |
+| `Sous catégorie`, `Période CFP`, `Dépense CFP` | autour de `Programme name` | rattachement budgétaire |
+| `N° projet`, `Type de projet` | après la référence LC | identification et nature du projet |
 
 ---
 
@@ -819,7 +1073,7 @@ pipeline **sans toucher au moteur**.
 
 Toutes les tables décrites ci-dessous se trouvent dans la **cellule 4**.
 
-### 9.0 Choisir le bon mécanisme
+### 10.1 Choisir le bon mécanisme
 
 | Votre situation | Table à éditer | Effet |
 |---|---|---|
@@ -836,7 +1090,7 @@ Toutes les tables décrites ci-dessous se trouvent dans la **cellule 4**.
 > Saisir le SIREN suffit donc : la TVA en découle avec certitude. Si vous ne
 > disposez que d'une TVA, le SIREN est simplement ses **9 derniers chiffres**.
 
-### 9.1 Vérifier avant d'écrire (obligatoire)
+### 10.2 Vérifier avant d'écrire (obligatoire)
 
 Tout SIREN/SIRET doit satisfaire la **clé de Luhn**. Ce contrôle détecte les
 fautes de frappe et les chiffres inversés. Collez ceci dans une cellule vide :
@@ -867,7 +1121,7 @@ print(controle_luhn("130030133"))        # ✓ + TVA calculée
 print(controle_luhn("13003013300016"))   # ✓ + SIREN extrait
 ```
 
-### 9.2 Forcer un SIREN (score porté à 100)
+### 10.3 Forcer un SIREN (score porté à 100)
 
 **Table : `_CORRECTIONS_RAPPORT_V2`** — cellule 4.
 
@@ -904,13 +1158,14 @@ _CORRECTIONS_RAPPORT_V2 = {
 recalculée, SIRET et forme juridique récupérés depuis la fiche SIRENE du siège,
 et donc **présence garantie dans le fichier final** (100 ≥ 96).
 
-### 9.3 Forcer un SIRET d'établissement
+### 10.4 Forcer un SIRET d'établissement
 
 **Table : `_SIRET_FORCE_BRUT`** — cellule 4.
 
 Cas d'usage : l'API renvoie le SIRET du **siège**, mais vous savez que le
 bénéficiaire réel est un **établissement particulier** (délégation régionale,
-antenne locale).
+antenne locale). C'est aussi le recours quand la désambiguïsation automatique
+par code postal n'a rien donné (voir §8).
 
 ```python
 _SIRET_FORCE_BRUT = {
@@ -925,7 +1180,7 @@ Le SIREN est **déduit automatiquement** des 9 premiers chiffres — inutile de
 l'ajouter ailleurs. Le SIRET forcé n'est appliqué que si le SIREN du résultat
 correspond bien : ce garde-fou évite d'attribuer un SIRET à la mauvaise entité.
 
-### 9.4 Bannir un faux positif
+### 10.5 Bannir un faux positif
 
 **Table : `_TVA_INTERDITES_BRUT_V2`** — cellule 4.
 
@@ -954,7 +1209,7 @@ pour ce bénéficiaire, le résultat est annulé (`NON_TROUVE`, stratégie
 > donc en recherche manuelle (`A CHERCHER` si le montant ≥ 300 k€, sinon
 > `AUTRE`).
 
-### 9.5 Exclure une entité qui ne peut pas avoir de TVA
+### 10.6 Exclure une entité qui ne peut pas avoir de TVA
 
 **Table : `_BENEFICIAIRES_SANS_TVA_PREFIXES`** — cellule 4.
 
@@ -966,10 +1221,11 @@ Le préfixe est écrit **normalisé** : majuscules, sans accents, **sans espaces
 ni ponctuation**. `« République française »` devient `REPUBLIQUEFRANCAISE`.
 
 **Effet** : statut `EXCLU` / `SANS_TVA_MANUEL`, **aucun appel API** (gain
-important quand l'entité revient des milliers de fois), et jamais de mention
-`A CHERCHER` — puisqu'il n'y a rien à chercher.
+important quand l'entité revient des milliers de fois), aucune entrée en Passe 0
+même si un *Main Registration* est présent, et jamais de mention `A CHERCHER` —
+puisqu'il n'y a rien à chercher.
 
-### 9.6 Regrouper plusieurs graphies sous un même SIREN
+### 10.7 Regrouper plusieurs graphies sous un même SIREN
 
 **Table : `_ALIAS_SIREN_CORRECTIONS`** — cellule 4. Ici la clé est le **SIREN**
 et la valeur une **liste de libellés** :
@@ -994,12 +1250,12 @@ _NOM_OFFICIEL_PAR_SIREN = {
 }
 ```
 
-### 9.7 Ajouter un opérateur de l'État
+### 10.8 Ajouter un opérateur de l'État
 
 **Table : bloc `OPERATEURS_ETAT`** — cellule 2. Attention, c'est du **JSON**,
 pas du Python : la syntaxe est plus stricte.
 
-Deux endroits à compléter, **impérativement les deux** :
+**Trois** endroits à compléter depuis la v5_27 :
 
 ```json
   "programmes": {
@@ -1009,8 +1265,17 @@ Deux endroits à compléter, **impérativement les deux** :
   "sirens": {
       "824544514": "AGENCE DE L'EAU LOIRE-BRETAGNE",
       "130030133": "GIP Plateforme de l’inclusion"
+  },
+  "periodes": {
+      "824544514": [[2000, 2026]],
+      "130030133": [[2021, 2026]]
   }
 ```
+
+> **`periodes`** porte les années de validité de l'opérateur, sous forme de
+> listes de bornes `[début, fin]` — plusieurs périodes disjointes sont admises.
+> Sans période, `Operateur_Etat` ne pourra pas être évalué correctement selon
+> l'année de la ligne.
 
 > **Piège JSON n°1 — la virgule.** Chaque entrée sauf la dernière doit se
 > terminer par une virgule. Une virgule oubliée provoque
@@ -1019,20 +1284,16 @@ Deux endroits à compléter, **impérativement les deux** :
 
 > **Piège JSON n°2 — pas de commentaires.** Le JSON n'accepte pas `#` ni `//`.
 
-> **Piège n°3 — les deux tables.** Ajouter le SIREN dans `sirens` sans
+> **Piège n°3 — les trois tables.** Ajouter le SIREN dans `sirens` sans
 > l'ajouter dans `programmes` donne un opérateur reconnu mais **sans
 > programme** (case vide). Ajouter dans `programmes` seulement ne le marque pas
-> comme opérateur.
+> comme opérateur. Omettre `periodes` fausse l'évaluation par millésime.
 
-**Contrôle après édition** — relancez la cellule 13 et vérifiez :
+**Contrôle après édition** — relancez la cellule 13 et vérifiez que le compteur
+d'opérateurs a augmenté de 1 (443 SIREN dans la v5_41). S'il est absent ou à 0,
+le JSON est cassé.
 
-```
-[ok] OPERATEURS_ETAT.json  : 69 SIREN d'opérateurs de l'État
-```
-
-Le compteur doit avoir augmenté de 1. S'il est absent ou à 0, le JSON est cassé.
-
-### 9.8 Vérifier que votre forçage a bien pris
+### 10.9 Vérifier que votre forçage a bien pris
 
 Après édition, **réexécutez la cellule concernée** puis la cellule 13, et testez
 sans lancer tout le pipeline :
@@ -1064,20 +1325,28 @@ presque toujours l'une de ces trois :
 
 ## 11. Ajouter ou modifier un référentiel
 
-Les référentiels sont des blocs **JSON** dans la cellule 2 (voir §9.7 pour la
+Les référentiels sont des blocs **JSON** dans la cellule 2 (voir §10.8 pour la
 syntaxe et les pièges). Principes généraux :
 
 | Référentiel | Quand y toucher |
 |---|---|
-| `OPERATEURS_ETAT` | nouvel opérateur, changement de programme |
+| `OPERATEURS_ETAT` | nouvel opérateur, changement de programme ou de période |
+| `SOUS_CATEGORIES` | programme signalé `NA` en fin d'étape 0 |
+| `PAYS_ALIAS` | pays signalé `AUTRE` en fin d'étape 0 |
 | `REF_SGAE` | nouvelle catégorie juridique à classer |
 | `GEO_FRANCE` | évolution territoriale (rare) |
-| `NAF_REV2` | changement de nomenclature INSEE (rare) |
+| `NAF_REV2`, `NAF2025_SECTIONS` | changement de nomenclature INSEE (rare) |
 | `VILLES_FR` | commune manquante — **attention aux homonymes** |
 
 **Règle absolue** : toute valeur ajoutée provient d'une **source officielle**
 et est vérifiée (Luhn pour les identifiants, recoupement web en cas de doute).
 Ne jamais saisir de mémoire.
+
+> **Vérifier avant d'intégrer un alias pays.** La campagne v5_33 a été validée
+> ligne à ligne contre le fichier FTS réel (volumes observés à l'appui) ; la
+> v5_34, portant sur des territoires rares, ne l'a **pas** été faute
+> d'occurrences — ces alias restent à confirmer sur un fichier où ces pays
+> apparaissent. Le doute est documenté plutôt que masqué.
 
 **Cas particulier des homonymes** : n'ajoutez une commune à `VILLES_FR` que si
 son nom est **non ambigu** au niveau national. Ajouter « SAINT-DENIS »
@@ -1100,12 +1369,12 @@ C'est le mécanisme d'amélioration continue du pipeline. Il boucle ainsi :
             ↓
    ④  annotation d'une colonne CORRECTION dans le rapport
             ↓
-   ⑤  intégration des corrections dans les tables (§9)
+   ⑤  intégration des corrections dans les tables (§10)
             ↓
    ⑥  réexécution : les cas corrigés sortent à 100
 ```
 
-### 11.1 Les annotations reconnues
+### 12.1 Les annotations reconnues
 
 | Annotation | Signification | Table de destination |
 |---|---|---|
@@ -1116,7 +1385,7 @@ C'est le mécanisme d'amélioration continue du pipeline. Il boucle ainsi :
 | `TROUVE` | identifiant trouvé manuellement | `_CORRECTIONS_RAPPORT_V2` |
 | `False` | le SIREN trouvé est faux, sans remplacement | `_TVA_INTERDITES_BRUT_V2` |
 
-### 11.2 Points de vigilance constatés
+### 12.2 Points de vigilance constatés
 
 - **Le SIRET affiché sur une ligne `CORRIGE` est l'ANCIEN** (celui du mauvais
   appariement) : l'ignorer, le bon SIRET est celui du siège du nouveau SIREN.
@@ -1124,13 +1393,16 @@ C'est le mécanisme d'amélioration continue du pipeline. Il boucle ainsi :
   introduisent des `\n`, des espaces (`« 254 401 839 »`) — à retirer.
 - **Vérifier les conflits croisés** : un même SIREN banni pour une graphie et
   forcé pour une autre signale une erreur d'annotation à trancher.
-- **Toujours contrôler la clé de Luhn** avant intégration (§9.1).
+- **Toujours contrôler la clé de Luhn** avant intégration (§10.2).
+- **Comparer `SIREN` et `Main registration number`** : depuis la v5_32, les deux
+  colonnes sont côte à côte dans le fichier. Un écart entre le SIREN de la
+  Commission et celui retenu par le pipeline est un cas à examiner en priorité.
 
 ---
 
 ## 13. Tester une modification sans rien casser
 
-### 12.1 La vérification obligatoire du moteur figé
+### 13.1 La vérification obligatoire du moteur figé
 
 À exécuter **avant toute livraison**, dans une cellule vide :
 
@@ -1144,7 +1416,7 @@ def corps_fonction(source, nom):
 
 # Chargez ici la version de référence v5_1 et la version courante
 reference = json.load(open("v5_1.ipynb"))
-courante  = json.load(open("FTS_France_PREPARATION_ENRICHISSEMENT_v5_19.ipynb"))
+courante  = json.load(open("FTS_France_PREPARATION_ENRICHISSEMENT_v5_41.ipynb"))
 src_ref = "\n".join("".join(c["source"]) for c in reference["cells"])
 src_cur = "\n".join("".join(c["source"]) for c in courante["cells"])
 
@@ -1161,7 +1433,7 @@ livraison.
 > son corps — c'est pourquoi la v5_19 a pu documenter le moteur sans rompre la
 > garantie.
 
-### 12.2 Tester hors ligne
+### 13.2 Tester hors ligne
 
 Pour valider une modification sans consommer d'appels API :
 
@@ -1193,7 +1465,24 @@ infos_par_siren = lambda siren, session, essais=4: {
 }
 ```
 
-### 12.3 Contrôles recommandés
+### 13.3 Tester la dérivation des références sans lancer le pipeline
+
+La fonction d'extraction est pure : elle se teste isolément.
+
+```python
+for libelle in [
+    "101177660 - MAKE-A-THEK - MODULAR LIBRARY MAKERSPACES",
+    "KBBE-2013 613960 SMARTBEES",
+    "2012-DE-17022-S PLANUNG DES NEUBAUS",
+    "Provisional budgetary commitment covering routine administrative expenditure",
+]:
+    print(extraire_reference_objet(libelle), "|", libelle[:55])
+```
+
+Attendu : `('101177660', 'NUM_EN_TETE')`, `('613960', 'NUM_APRES_CODE_APPEL')`,
+puis `('', '')` pour les deux derniers (code non numérique, puis aucun nombre).
+
+### 13.4 Contrôles recommandés
 
 | Contrôle | Comment |
 |---|---|
@@ -1202,6 +1491,7 @@ infos_par_siren = lambda siren, session, essais=4: {
 | Colonnes bien placées | `list(df.columns).index("…")` |
 | Colonnes bien peintes | relire l'export avec `openpyxl` |
 | Non-régression des corrections | vérifier que d'anciens cas forcés sortent toujours à 100 |
+| Cohérence des références | sur un fichier 2025, comparer `Project / Contract Reference` et la valeur qu'aurait produite la dérivation |
 
 ---
 
@@ -1215,10 +1505,13 @@ infos_par_siren = lambda siren, session, essais=4: {
 | `FileNotFoundError` sur le rapport | aucune TVA manquante → rapport non créé | comportement normal |
 | Beaucoup de `HTTP 429` | cadence trop élevée | augmenter `DELAI_API` (0.15 → 0.25) |
 | Session Colab interrompue | traitement trop long | découper le fichier en lots |
-| Une correction reste sans effet | nom non exact, cellule non réexécutée, ou virgule manquante | voir §9.8 |
-| Un opérateur reste à `0` | le nom FTS diffère du référentiel **et** la recherche a échoué | vérifier §9.7, ou compléter la reconnaissance par famille |
+| Une correction reste sans effet | nom non exact, cellule non réexécutée, ou virgule manquante | voir §10.9 |
+| Un opérateur reste à `non` | le SIREN est absent du référentiel, **ou l'année de la ligne est hors période de validité** | vérifier §10.8, notamment `periodes` |
 | `Metro/RUP/PTOM` vide | ni CP, ni SIREN, ni ville exploitables | normal : on n'invente pas de territoire |
 | Colonne ajoutée non bleue | absente de la liste de coloriage | ajoutez-la dans `exporter_pipeline` (cellule 11) |
+| Passe 0 sans effet | colonne `Main registration` absente (millésime < 2025), ou valeurs non conformes à un SIREN | comportement normal, la Passe 1 prend le relais |
+| Passe mémoire sans effet | `correspondance_siren.json` non déposé et bénéficiaires absents du socle embarqué | normal au premier traitement d'un périmètre nouveau |
+| `Référence projet complétée` majoritairement à `NA` | les libellés ne portent pas de référence numérique en tête | lire les 15 exemples affichés en fin d'étape 0 avant de conclure |
 
 ---
 
@@ -1232,10 +1525,12 @@ infos_par_siren = lambda siren, session, essais=4: {
 | **Kohesio** | base de la Commission recensant les projets de la politique de cohésion (gestion partagée) |
 | **CFP** | Cadre financier pluriannuel — budget de l'UE sur 7 ans |
 | **PPNR** | Plan de partenariat national et régional — futur fonds unique de gestion partagée (2028-2034) |
+| **Main Registration** | champ FTS (millésime 2025+) portant le numéro de registre national du bénéficiaire — un SIREN pour la France |
+| **Mémoire de correspondance** | table (nom, département) → SIREN, constituée sur un millésime et réutilisée sur les autres |
 | **SIREN** | identifiant à 9 chiffres d'une **unité légale** française |
 | **SIRET** | identifiant à 14 chiffres d'un **établissement** (SIREN + NIC à 5 chiffres) |
 | **SIRENE** | répertoire INSEE des entreprises et établissements |
-| **NAF / APE** | nomenclature d'activité française (code + libellé) |
+| **NAF / APE** | nomenclature d'activité française (code + libellé) ; la **section** est le niveau le plus agrégé |
 | **NUTS** | nomenclature territoriale européenne : NUTS2 ≈ anciennes régions, NUTS3 ≈ départements |
 | **RUP** | Région ultrapériphérique (art. 349 TFUE) — **dans** l'UE |
 | **PTOM** | Pays et territoire d'outre-mer (annexe II TFUE) — **hors** UE |
@@ -1257,4 +1552,39 @@ infos_par_siren = lambda siren, session, essais=4: {
 | [Annuaire des entreprises](https://annuaire-entreprises.data.gouv.fr/) | vérification manuelle |
 | [INSEE — catégories juridiques](https://www.insee.fr/fr/information/2028129) | nomenclature `cj_septembre_2022` |
 | [INSEE — NAF rév. 2](https://www.insee.fr/fr/information/2120875) | libellés d'activité |
+| [INSEE — NAF 2025](https://www.insee.fr/fr/information/8244015) | sections et divisions |
 
+---
+
+## 17. Nouveautés depuis la v5_19
+
+Récapitulatif des évolutions à connaître, de la plus récente à la plus ancienne.
+Le **moteur de recherche est resté strictement inchangé** sur toute la période.
+
+| Version | Apport | Section |
+|---|---|---|
+| **v5_41** | Colonne `Référence projet complétée` — référence numérique dérivée du libellé de l'objet quand la Commission ne la fournit pas | §5.7 |
+| **v5_40** | `Nom API` complétée par la passe 2 · colonne `Adresse réordonnée` · `AUTRE` / `A CHERCHER` généralisés à toutes les colonnes ajoutées | §8, §9.2 |
+| **v5_38 – v5_39** | Colonne `Nom API` : écriture officielle de l'annuaire, y compris pour les Passes 0 et mémoire | §8 |
+| **v5_31 – v5_37** | **Mémoire de correspondance inter-millésimes** : socle embarqué, repli « nom seul », propagation intra-fichier | §8 |
+| **v5_32** | Colonne `SIREN` repositionnée face au *Main Registration* · désambiguïsation d'établissement par code postal (best-effort) | §8, §12.2 |
+| **v5_33 – v5_34** | 13 programmes CFP 21-27 (198 au total) · 13 alias pays, dont les troncatures `« Republ »` et `« Republic o »` | §5.3, §5.6 |
+| **v5_30** | **Passe 0** : exploitation du champ *Main registration number* du millésime 2025 | §8 |
+| **v5_27 – v5_29** | `Operateur_Etat` conditionné à une **période de validité** (oui/non), 438 périodes, décalage N-1 sur la borne de début | §8, §10.8 |
+| **v5_23 – v5_26** | Référentiel des opérateurs de l'État porté à **443 SIREN** (annexe Jaune complète) | §4.2 |
+| **v5_20 – v5_22** | Colonne `Section_NAF` (NAF 2025 : 22 sections, 87 divisions) | §8 |
+
+### Points de vigilance introduits par ces évolutions
+
+- **La mémoire de correspondance est un actif** : conservez
+  `correspondance_siren.json` d'une exécution à l'autre, c'est lui qui réduit le
+  volume d'appels réseau sur les millésimes anciens.
+- **`Operateur_Etat` répond désormais `oui`/`non`** et dépend de l'année de la
+  ligne : un tableau de bord construit sur l'ancien `1`/`0` doit être adapté.
+- **Trois tables à compléter** pour un nouvel opérateur, et non plus deux
+  (`sirens`, `programmes`, `periodes`).
+- **Les alias pays de la v5_34 ne sont pas empiriquement vérifiés** : à
+  confirmer sur un fichier où ces territoires apparaissent réellement.
+- **La désambiguïsation d'établissement est best-effort** : en cas d'échec, le
+  SIRET du siège est conservé. Pour un établissement précis, passer par
+  `_SIRET_FORCE_BRUT` (§10.4).

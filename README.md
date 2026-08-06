@@ -1033,7 +1033,6 @@ case est vide.
 | 🔵 Bleu clair | `BDD7EE` | fichier | **colonne ajoutée** par le pipeline (en-tête + cellules non vides) |
 | 🟢 Vert clair | `C6EFCE` | fichier | TVA trouvée en **haute confiance** (score ≥ 92) |
 | 🟡 Jaune | `FFEB9C` | fichier | TVA trouvée, confiance moyenne (80 ≤ score < 92) |
-| 🟩 Vert vif | `00B050` | fichier | **cellule corrigée** (adresse réordonnée, valeur reprise) |
 | 🟠 Orange | `FFC000` | **rapport** | **à chercher à la main** : score < 96 **et** montant ≥ 300 k€ |
 
 > Une cellule **vide** d'une colonne ajoutée reste **non peinte** : c'est voulu,

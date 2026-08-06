@@ -41,9 +41,7 @@ européens — mais il est difficilement exploitable en l'état :
   direct de relier un bénéficiaire aux référentiels français (INSEE, opérateurs
   de l'État). **Le millésime 2025 change la donne** : la Commission y introduit
   le champ `Main registration number of beneficiary`, qui porte le **SIREN**
-  pour les lignes françaises — 5 466 lignes sur 5 813 dans le fichier vérifié,
-  toutes valides au sens de la clé de Luhn. Le pipeline l'exploite directement
-  (Passe 0, §8) et évite ainsi toute recherche pour ces lignes. **Le SIRET,
+  pour les lignes françaises. **Le SIRET,
   lui, reste absent quel que soit le millésime** : il doit toujours être
   récupéré dans SIRENE à partir du SIREN ;
 - l'**adresse est fréquemment masquée** par des caractères de remplacement

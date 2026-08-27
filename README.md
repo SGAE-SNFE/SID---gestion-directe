@@ -1,8 +1,7 @@
-# README — Pipeline FTS France (v5_41)
+# README — Pipeline FTS France
 
-> Document mis à jour pour la version **v5_41** du notebook
+> Document mis à jour pour la version v5
 > `FTS_France_PREPARATION_ENRICHISSEMENT`. Les nouveautés depuis la version
-> précédemment documentée (v5_19) sont récapitulées en [section 17](#17-nouveautés-depuis-la-v5_19).
 
 ## Table des matières
 

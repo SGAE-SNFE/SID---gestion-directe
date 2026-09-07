@@ -1549,7 +1549,7 @@ puis `('', '')` pour les deux derniers (code non numérique, puis aucun nombre).
 
 | Source | Usage |
 |---|---|
-| [Système de transparence financière (FTS)](https://ec.europa.eu/budget/financial-transparency-system/) | fichier source |
+| [Système de transparence financière (FTS)](https://ec.europa.eu/budget/financial-transparency-system/help.html#download-data) | fichier source |
 | [API Recherche d'entreprises](https://recherche-entreprises.api.gouv.fr/docs/) | identification SIREN/SIRET |
 | [Annuaire des entreprises](https://annuaire-entreprises.data.gouv.fr/) | vérification manuelle |
 | [INSEE — catégories juridiques](https://www.insee.fr/fr/information/2028129) | nomenclature `cj_septembre_2022` |

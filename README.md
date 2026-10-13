@@ -8,6 +8,7 @@
 > | `FTS_France_PREPARATION_ENRICHISSEMENT` (v5_41) | identification et qualification des bénéficiaires FTS | §1 à §17 |
 > | `KOHESIO_beneficiaires_COMPLET_v6` | siretisation des bénéficiaires Kohesio | §18 |
 > | `REPARTITION_CANAUX` | croisement des deux sources et répartition par canal | §19 à §21 |
+> | `RECHERCHE_ALBERT_DINUM` | recherche thématique dans les projets (IA) | §22 à §23 |
 >
 > Les nouveautés du pipeline FTS depuis la version précédemment documentée
 > (v5_19) sont récapitulées en [section 17](#17-nouveautés-depuis-la-v5_19).
@@ -38,6 +39,11 @@
 19. [**Croisement FTS × Kohesio**](#19-croisement-fts--kohesio)
 20. [Restitution dans MicroStrategy](#20-restitution-dans-microstrategy)
 21. [Limites connues de la chaîne Kohesio](#21-limites-connues-de-la-chaîne-kohesio)
+
+**Recherche thématique**
+
+22. [**Recherche thématique dans les projets**](#22-recherche-thématique-dans-les-projets)
+23. [Exécuter la recherche thématique sur Kaggle](#23-exécuter-la-recherche-thématique-sur-kaggle)
 
 ---
 
@@ -1556,6 +1562,11 @@ puis `('', '')` pour les deux derniers (code non numérique, puis aucun nombre).
 | **Canal** | mode de gestion du financement : directe (FTS) ou partagée (Kohesio) |
 | **Format long / large** | long = une ligne par entité × année × canal (graphiques) ; large = montants en colonnes (tableaux) |
 | **Montant programmé** | montant Kohesio couvrant toute la durée du projet, par opposition à un engagement annuel |
+| **Albert API** | plateforme d'inférence interministérielle pour l'IA générative, portée par la DINUM ; gratuite pour les agents de l'État |
+| **Expansion de requête** | reformulation d'une question en plusieurs variantes, pour élargir la récupération |
+| **Reclassement** | seconde passe qui réévalue la pertinence des candidats déjà présélectionnés |
+| **Fusion par rangs réciproques** | combinaison de deux classements fondée sur les rangs et non sur les scores, insensible à leurs échelles |
+| **Vectorisation** | représentation d'un texte par un vecteur numérique, où la proximité géométrique traduit la proximité de sens |
 
 ---
 
@@ -1572,7 +1583,11 @@ puis `('', '')` pour les deux derniers (code non numérique, puis aucun nombre).
 | [INSEE — NAF rév. 2](https://www.insee.fr/fr/information/2120875) | libellés d'activité |
 | [INSEE — NAF 2025](https://www.insee.fr/fr/information/8244015) | sections et divisions |
 | [Kohesio](https://kohesio.ec.europa.eu/) | projets de la politique de cohésion (gestion partagée) |
+| [Kohesio — téléchargement des données 2021-2027](https://kohesio.ec.europa.eu/en/data/programmingPeriod20212027) | **exports Kohesio par pays** (opérations et bénéficiaires) |
 | [Règlement (UE) 2021/1060](https://eur-lex.europa.eu/eli/reg/2021/1060/oj?locale=fr) | base légale de la publication Kohesio (art. 49 §3) |
+| [API Funding & Tenders / CORDIS](https://cordis.europa.eu/) | projets, participants et rapports d'exécution |
+| [Albert API — DINUM](https://ia.numerique.gouv.fr/outils-ia/albert-api/) | plateforme d'IA générative de l'État |
+| [Albert API — référence technique](https://albert.api.etalab.gouv.fr/reference) | schéma des endpoints |
 
 ---
 
@@ -1629,6 +1644,11 @@ L'objectif est donc le même que pour le FTS — retrouver le SIREN de chaque
 bénéficiaire — mais la source est différente.
 
 ### 18.2 Fichiers d'entrée
+
+Les exports sont téléchargeables sur le portail de la Commission :
+**[Kohesio — Data, période 2021-2027](https://kohesio.ec.europa.eu/en/data/programmingPeriod20212027)**
+(sélectionner la France ; les exports antérieurs sont accessibles depuis la même
+page en changeant de période de programmation).
 
 Deux exports Kohesio circulent, à ne pas confondre :
 
@@ -1904,3 +1924,321 @@ Pour lire la répartition plutôt que les montants, basculer sur **Empilé à
   réelle de mise à jour se mesure, elle ne se suppose pas.
 - **Taux de siretisation à vérifier avant toute interprétation.** Une entité
   siretisée d'un seul côté apparaît à tort comme présente sur un seul canal.
+
+---
+
+## 22. Recherche thématique dans les projets
+
+> Notebook `RECHERCHE_ALBERT_DINUM.ipynb`.
+> Répond à des questions du type « **tous les projets sur la voiture à
+> hydrogène** », en retrouvant les projets qui traitent du sujet **même
+> lorsqu'ils n'en emploient pas les mots**.
+
+### 22.1 Le problème
+
+Les trois chaînes précédentes répondent à « qui capte, combien, par quel
+canal ». Elles ne répondent pas à « **sur quoi** ». Or une question thématique
+— l'hydrogène, la rénovation énergétique, l'insertion des jeunes — ne se traite
+pas par filtrage : un projet intitulé « pile à combustible embarquée » relève de
+la voiture à hydrogène sans partager un seul mot avec cette formulation.
+
+Trois difficultés se cumulent :
+
+| Difficulté | Conséquence |
+|---|---|
+| Le même sujet s'exprime de dizaines de façons | une recherche par mots-clés rate l'essentiel |
+| Le corpus est **bilingue** : CORDIS en anglais, Kohesio en français **et** anglais | une question française ignore la moitié du corpus |
+| 77 296 projets | aucun modèle ne peut tous les lire à chaque question |
+
+### 22.2 Le corpus
+
+| Source | Projets | Canal | Textes exploités |
+|---|---|---|---|
+| API Funding & Tenders (`projects`, `participants`, `summaries`) | 15 694 à participation française | gestion directe | objectif, résumé d'exécution, travaux réalisés, résultats |
+| `FR_KOHESIO_14_27.xlsx` | 61 602 (2014-2027) | gestion partagée | résumé **français** et **anglais** |
+| **Total indexé** | **77 296** | | |
+
+> **Atout propre à Kohesio** : chaque projet y porte son résumé en français
+> **et** en anglais sur la même ligne. Une question française y trouve
+> directement ses réponses, sans dépendre d'une traduction.
+
+> **Attention aux montants.** Les projets CORDIS sont collaboratifs : un projet
+> peut réunir vingt partenaires de plusieurs pays. La colonne affichée est la
+> contribution perçue par les **seuls partenaires français**, distincte du
+> budget total du consortium. Les confondre surestime fortement la captation.
+
+### 22.3 L'architecture en entonnoir
+
+Le principe directeur est : **permissif à la récupération, sévère au
+classement**. Filtrer trop tôt rend un projet définitivement invisible, quelles
+que soient les étapes suivantes.
+
+```
+   question en français
+        │
+   ① EXPANSION ────── le modèle reformule en 10 variantes
+   │                  (5 françaises + 5 anglaises, imposé)
+   │                     « voiture à hydrogène » →
+   │                     pile à combustible · rétrofit hydrogène ·
+   │                     hydrogen vehicle · FCEV powertrain · …
+        │
+   ② RÉCUPÉRATION ─── chaque formulation est cherchée séparément
+   │                  • moteur lexical  (BM25, ou TF-IDF hors ligne)
+   │                  • moteur sémantique (vecteurs bge-m3)
+   │                  • fusion par rangs réciproques (K = 60)
+   │                  → ~300 candidats, AUCUN filtre éliminatoire
+        │
+   ③ RECLASSEMENT ─── bge-reranker-v2-m3, par lots de 32
+   │                  interrogé en français ET en anglais,
+   │                  chaque projet garde son meilleur score
+        │
+   ④ LECTURE ──────── gpt-oss-120b lit les 12 finalistes en entier
+   │                  → note /100 · raison · résumé rédigé
+        │
+   └──> affichage : tous les projets, classés
+```
+
+**Pourquoi quatre étapes et non une.** Chacune corrige la faiblesse de la
+précédente : l'expansion compense la pauvreté d'une question de trois mots, la
+fusion compense l'aveuglement du lexical aux reformulations, le reclassement
+compense le bruit de la récupération large, et la lecture compense le fait qu'un
+score de proximité ne comprend pas de quoi parle un projet.
+
+### 22.4 La lecture approfondie — ce que l'IA apporte réellement
+
+C'est la seule étape où un modèle **lit** les projets plutôt que de mesurer une
+proximité. Chaque finaliste lui est transmis en entier — intitulé, objectif,
+rapport d'exécution, travaux, résultats, jusqu'à 2 500 caractères — avec la
+question.
+
+| Sortie | Contenu |
+|---|---|
+| `pertinence_ia` | note de 0 à 100 fondée sur le **contenu réel** du projet |
+| `raison` | une phrase : en quoi le projet répond, ou non, à la question |
+| `resume_ia` | 3 à 5 phrases rédigées en français, orientées par la question |
+
+La consigne est explicite : *un projet qui aborde le thème avec un vocabulaire
+différent doit recevoir une note élevée ; un projet qui partage seulement des
+mots sans traiter le sujet doit recevoir une note basse*. C'est ce qui règle le
+problème posé au §22.1.
+
+> **Limite structurelle à connaître.** La lecture ne porte que sur les
+> finalistes, jamais sur les 77 296 projets : faire lire l'ensemble du corpus à
+> chaque question est hors de portée en temps comme en quota. **Si un projet
+> pertinent n'a pas été remonté par la récupération, l'IA ne le verra jamais.**
+> L'expansion et les seuils ouverts élargissent beaucoup le filet, ils ne le
+> rendent pas infaillible.
+
+### 22.5 Les modèles Albert employés
+
+La plateforme interministérielle d'IA générative de la DINUM
+(`https://albert.api.etalab.gouv.fr/v1`) est compatible OpenAI et **gratuite
+pour les agents de la fonction publique d'État**.
+
+| Usage | Modèle | Type exigé par l'endpoint |
+|---|---|---|
+| Expansion, traduction, lecture | `gpt-oss-120b` | `text-generation` |
+| Vectorisation du corpus | `bge-m3` | `text-embeddings-inference` |
+| Reclassement | `bge-reranker-v2-m3` | `text-classification` |
+
+> **Piège vérifié.** `/v1/chat/completions` n'accepte **que** le type
+> `text-generation`. Les modèles classés `image-text-to-text`
+> (`mistral-small-3-2-24b-instruct-2506`, `ministral-3-8b-instruct-2512`) y sont
+> refusés avec une erreur **422**, bien qu'ils soient présentés comme des
+> modèles de chat sur la page tarifs.
+
+> **Les identifiants sont courts.** L'API renvoie `bge-m3`, pas `BAAI/bge-m3`.
+> Le notebook interroge `/v1/models` au démarrage et **sélectionne
+> automatiquement** un identifiant valide par type : le code reste fonctionnel
+> si le catalogue évolue.
+
+**Quotas en offre Expérimentation** (gratuite) : 500 requêtes/min et 50 000/jour
+sur `bge-m3` et le reranker. L'encodage initial des 77 296 projets représente
+environ 1 200 requêtes, soit 2,5 % du quota journalier. Les vecteurs sont
+ensuite **sauvegardés** (`vecteurs_projets.npy`) et rechargés.
+
+### 22.6 Les scores — ce qu'ils sont et ne sont pas
+
+| Score | Origine | Comparable d'une question à l'autre ? |
+|---|---|---|
+| `score` | fusion des deux moteurs, **relatif** au meilleur résultat | non |
+| `pertinence` | reclassement, ramené en % du meilleur | non |
+| `pertinence_ia` | lecture du modèle, note absolue /100 | oui |
+
+> **Aucun de ces scores n'est une probabilité.** Un score de 100 signifie
+> « meilleur des résultats trouvés », y compris quand aucun n'est pertinent.
+
+**Aucun seuil n'élimine de projet par défaut** (`SEUIL_PERTINENCE = 0`,
+`SEUIL_IA = 0`, `COUVERTURE_MIN = 0`). Les niveaux affichés — « sûr »,
+« probable », « à vérifier » — ne servent qu'à qualifier la lecture.
+
+> **Incident fondateur.** Une version intermédiaire appliquait un seuil absolu
+> de 10 sur le score du reclassement. Or `bge-reranker` renvoie des valeurs de
+> l'ordre de 0,05 à 0,0001 : presque tous les projets tombaient sous le seuil, et
+> une recherche sur l'hydrogène ne retournait plus que **deux** résultats au lieu
+> de plusieurs dizaines. Ne pas réintroduire de seuil absolu sur ce score.
+
+### 22.7 Fonctions disponibles
+
+```python
+afficher_resultats("voiture à hydrogène")                  # fiches complètes
+afficher_resultats("hydrogène ou photovoltaïque")          # plusieurs thèmes
+rechercher_multi("rénovation énergétique")                 # données brutes
+discuter()                                                 # en ligne de commande
+```
+
+La recherche **multi-thématique** accepte `ou`, `or`, la virgule, `|` et `;`.
+Chaque thème est cherché **séparément** — indispensable, car un filtre portant
+sur la question entière éliminerait les projets ne traitant qu'un seul sujet.
+Les projets à l'intersection de plusieurs thèmes sont signalés.
+
+### 22.8 Fonctionnement dégradé
+
+Le notebook fonctionne **sans Albert**, avec repli automatique et message
+explicite :
+
+| Composant absent | Repli |
+|---|---|
+| Clé Albert ou réseau | mode **factuel** : comptes, montants, bénéficiaires récurrents — rien d'inventé |
+| `rank_bm25` non installé | **TF-IDF** (`scikit-learn`, préinstallé) |
+| Moteur sémantique | recherche lexicale seule |
+| `ipywidgets` | fonction `discuter()` en ligne de commande |
+
+---
+
+## 23. Exécuter la recherche thématique sur Kaggle
+
+Ce notebook est le seul de la chaîne conçu pour **Kaggle** et non pour Colab.
+Deux raisons : les sessions y durent 12 heures et survivent à la fermeture de
+l'onglet, et les données sont montées une fois pour toutes.
+
+### 23.1 Préparer les jeux de données
+
+Créer **un ou deux datasets** selon votre organisation :
+
+| Dataset | Fichiers |
+|---|---|
+| CORDIS | `projects*.csv`, `participants*.csv`, `summaries*.csv` |
+| Kohesio | `FR_KOHESIO_14_27.xlsx` |
+
+```
+Create → New Dataset → déposer les fichiers → visibilité Private → Create
+```
+
+Attendre le statut **Complete** : sur 600 Mo, le traitement prend plusieurs
+minutes, et un dataset en cours de traitement ne se rattache pas.
+
+> Les fichiers sont détectés **par leur contenu**, pas par leur nom : le
+> notebook lit l'en-tête de chaque tableur et reconnaît les colonnes
+> caractéristiques. Peu importe donc comment vous nommez vos fichiers.
+
+### 23.2 Importer le notebook
+
+```
+Create → New Notebook → File → Import Notebook → déposer le .ipynb
+```
+
+> **Ne pas copier-coller les cellules.** Les types Markdown et Code seraient
+> perdus : le texte de présentation serait exécuté comme du Python et
+> provoquerait `SyntaxError: invalid character '—'`.
+
+> Un import crée un **nouveau** notebook : les datasets et secrets rattachés à
+> l'ancien ne suivent pas. Refaire les étapes 23.3 et 23.5 après chaque import.
+
+### 23.3 Rattacher les données
+
+```
+Panneau de droite → + Add Input → onglet « Your Datasets » → +
+```
+
+Les datasets privés **n'apparaissent pas** dans la recherche générale : il faut
+passer par cet onglet. Vérification :
+
+```python
+import glob
+print(glob.glob("/kaggle/input/**/*", recursive=True))
+```
+
+### 23.4 Activer Internet
+
+```
+Panneau de droite → Settings → Internet : On
+Accelerator : None   (aucun GPU n'est nécessaire)
+```
+
+Si l'interrupteur est grisé : **Settings du profil → Phone Verification**,
+validation par SMS. C'est une exigence de Kaggle pour autoriser les connexions
+sortantes, à faire une seule fois.
+
+> **Sans Internet, rien ne fonctionne au-delà du mode dégradé** : ni
+> l'installation des paquets, ni Albert. Le signal le plus précoce est le
+> message `hors ligne : repli automatique` affiché dès la première cellule.
+
+### 23.5 Déclarer la clé Albert
+
+1. Obtenir la clé : `https://ia.numerique.gouv.fr/outils-ia/albert-api/` →
+   bouton **Accédez à Albert API** → authentification **ProConnect** avec
+   l'adresse professionnelle → créer une clé depuis le playground.
+2. Dans le notebook : panneau de droite → **Secrets** → nouvelle entrée nommée
+   exactement **`ALBERT_API_KEY`** → coller la clé → **cocher la case** qui
+   l'attache au notebook.
+3. **Redémarrer la session** : `Run → Restart session`. Kaggle ne recharge pas
+   un secret modifié dans un noyau déjà lancé.
+
+> **Ne jamais écrire la clé dans une cellule.** Un notebook enregistré ou
+> partagé exposerait un jeton rattaché à votre compte agent. Le mécanisme de
+> secrets existe pour cela, et la clé n'apparaît alors jamais en clair.
+
+### 23.6 Exécuter
+
+| Mode | Quand |
+|---|---|
+| **Run All** | usage interactif |
+| **Save Version → Save & Run All** | encodage complet des 77 296 projets, en arrière-plan |
+
+La cellule de **diagnostic** doit être exécutée en premier en cas de doute :
+elle vérifie l'état de l'API, la validité de la clé, les quotas et liste les
+modèles réellement disponibles par type.
+
+**Déroulé attendu** : chargement des trois fichiers CORDIS, ajout de Kohesio,
+construction de l'index, encodage via Albert, puis recherche. Compter une
+dizaine de minutes au premier lancement, dont l'essentiel pour la lecture des
+334 Mo de rapports.
+
+> **Mémoire.** L'indexation complète demande environ 6 Go, disponibles sur
+> Kaggle. Sur une machine plus modeste, réduire `LIMITE_KOHESIO` (par exemple
+> 20 000) ; un premier essai à 5 000 permet de valider la chaîne avant de
+> lancer le corpus entier.
+
+### 23.7 Conserver l'index entre deux sessions
+
+L'encodage est l'opération la plus coûteuse. Les vecteurs sont écrits dans
+`/kaggle/working/vecteurs_projets.npy` : publiez ce fichier comme **nouveau
+dataset**, puis ajoutez-le en entrée des sessions suivantes. Le notebook le
+recharge automatiquement si sa taille correspond au corpus.
+
+### 23.8 Dépannage
+
+| Symptôme | Cause | Solution |
+|---|---|---|
+| `SyntaxError: invalid character '—'` | cellules copiées-collées | **File → Import Notebook** |
+| `ModuleNotFoundError: rank_bm25` | Internet désactivé | activer Internet ; sinon le repli TF-IDF s'applique |
+| `Dataset introuvable` | dataset non rattaché, ou traitement inachevé | **+ Add Input** → *Your Datasets* |
+| `Fichier Kohesio introuvable` | dataset Kohesio non rattaché | idem ; le message liste les fichiers vus |
+| `Max retries exceeded` sur Albert | Internet désactivé | Settings → Internet : On |
+| `401 Invalid API key` | clé révoquée, remplacée sans redémarrage, ou tronquée | nouvelle clé, secret mis à jour, **Restart session** |
+| `422 Model has wrong type` | modèle de chat classé `image-text-to-text` | laisser `AUTO_MODELES = True` |
+| Reclassement indisponible (`HTTPError`) | lot trop volumineux | réduire `TAILLE_LOT_RERANK` (32 → 16) |
+| Très peu de résultats | un seuil a été réintroduit | vérifier `SEUIL_PERTINENCE`, `SEUIL_IA`, `COUVERTURE_MIN` à 0 (§22.6) |
+| `ConcurrencyViolation` à l'enregistrement | notebook ouvert dans deux onglets | fermer les autres onglets, recharger, **Save Version** |
+| Textes anglais mal classés | expansion déséquilibrée | vérifier que les formulations affichées comportent bien des variantes anglaises |
+
+### 23.9 Avant d'exploiter les résultats
+
+> **Un moteur de recherche renvoie toujours une liste.** Rien, à l'examen
+> visuel, n'indique si des projets pertinents ont été **manqués**. Constituer un
+> jeu d'évaluation — quinze à vingt questions avec les projets attendus,
+> identifiés manuellement — est le seul moyen de mesurer la qualité du
+> dispositif. Ce travail n'est pas automatisable : il constitue la référence
+> contre laquelle tout le reste se mesure. La fonction `evaluer()` du notebook
+> l'attend.
